@@ -132,8 +132,12 @@ install_amd() {
     pkg_install libva-utils libva-utils
   fi
 
-  # CoreCtrl — closest thing to AMD's Windows Adrenalin overclock/fan panel
-  flatpak_install org.corectrl.corectrl
+  # CoreCtrl is NOT on Flathub (confirmed — it was never published there and
+  # the project entered maintenance mode in 2025). LACT (Linux GPU
+  # Configuration And Monitoring Tool) is the actively maintained, actually
+  # Flathub-published alternative — fan curves, power limits, overclocking —
+  # and it also supports NVIDIA/Intel, not just AMD.
+  flatpak_install io.github.ilya_zlobintsev.LACT
 
   ok "AMD driver stack ready (amdgpu is kernel-native — no reboot required, but"
   ok "recommended after a fresh firmware install)."

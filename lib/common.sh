@@ -167,9 +167,32 @@ download_and_install_deb() {
 # ---------- module runner ------------------------------------------------------
 # Runs a module script if it's executable, records pass/fail into arrays that
 # install.sh reports on at the end.
+#
+# QUIET BY DEFAULT: each module's full output (package manager chatter,
+# flatpak "Looking for matches", curl progress, etc.) is captured into its own
+# log file under logs/, NOT printed to the terminal. Only a one-line
+# pass/fail per module is shown live. On failure, the last ~25 lines of that
+# module's log are printed automatically so you can see the actual error
+# without having to go dig for it.
+#
+# Modules that need to prompt the user interactively (read -p, or a
+# third-party interactive installer like SpotX) are listed in
+# INTERACTIVE_MODULES and run with output attached directly to the terminal
+# instead, since redirecting their output would hide the prompts themselves.
+LOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/logs"
+INTERACTIVE_MODULES=("14-whatsapp" "15-spotify-spotx")
+
 declare -a MODULES_OK=()
 declare -a MODULES_FAILED=()
 declare -a MODULES_SKIPPED=()
+
+_is_interactive_module() {
+  local name="$1" m
+  for m in "${INTERACTIVE_MODULES[@]}"; do
+    [ "$m" = "$name" ] && return 0
+  done
+  return 1
+}
 
 run_module() {
   local module_path="$1"
@@ -183,10 +206,29 @@ run_module() {
     return
   fi
 
-  if bash "$module_path"; then
+  if _is_interactive_module "$module_name"; then
+    if bash "$module_path"; then
+      ok "$module_name completed"
+      MODULES_OK+=("$module_name")
+    else
+      err "$module_name FAILED"
+      MODULES_FAILED+=("$module_name")
+    fi
+    return
+  fi
+
+  mkdir -p "$LOG_DIR"
+  local log_file="$LOG_DIR/${module_name}.log"
+  : > "$log_file"
+
+  if bash "$module_path" >"$log_file" 2>&1; then
+    ok "$module_name completed  (log: logs/${module_name}.log)"
     MODULES_OK+=("$module_name")
   else
-    err "Module $module_name exited with an error"
+    err "$module_name FAILED — last 25 lines of logs/${module_name}.log:"
+    echo "----------------------------------------------------------------"
+    tail -n 25 "$log_file" | sed 's/^/    /'
+    echo "----------------------------------------------------------------"
     MODULES_FAILED+=("$module_name")
   fi
 }
@@ -196,4 +238,5 @@ print_summary() {
   echo -e "${C_GREEN}Completed:${C_RESET} ${MODULES_OK[*]:-none}"
   [ "${#MODULES_SKIPPED[@]}" -gt 0 ] && echo -e "${C_YELLOW}Skipped:${C_RESET}   ${MODULES_SKIPPED[*]}"
   [ "${#MODULES_FAILED[@]}" -gt 0 ] && echo -e "${C_RED}Failed:${C_RESET}    ${MODULES_FAILED[*]}"
+  [ "${#MODULES_FAILED[@]}" -gt 0 ] && echo -e "Full logs for failed modules are in: ${LOG_DIR}/"
 }

@@ -24,28 +24,29 @@ else
   fi
 fi
 
-# xtreme download manager — no repo package, ships as .deb / AppImage on GitHub
+# xtreme download manager — current releases ship a direct .deb asset
+# (xdman_gtk_<version>_amd64.deb), not the old tar.xz+install.sh bundle this
+# script originally targeted, so we grab that asset directly.
 if is_cmd xdman; then
   ok "xdman already installed — skipping"
 elif [ "$PKG_FAMILY" = "debian" ]; then
-  log "Installing xtreme download manager (xdman) from GitHub release ..."
-  XDM_URL="$(curl -fsSL https://api.github.com/repos/subhra74/xdm/releases/latest \
-    | grep -oP '"browser_download_url":\s*"\K[^"]+setup\.sh' | head -n1)"
-  if [ -n "${XDM_URL:-}" ]; then
-    tmp="$(mktemp -d)"
-    curl -fsSL "$XDM_URL" -o "$tmp/xdm-setup.sh"
-    chmod +x "$tmp/xdm-setup.sh"
-    warn "xdm-setup.sh downloaded to $tmp — run it manually and follow prompts:"
-    warn "  sudo bash $tmp/xdm-setup.sh"
+  log "Installing xtreme download manager (xdman) from latest GitHub release ..."
+  XDM_DEB_URL="$(curl -fsSL https://api.github.com/repos/subhra74/xdm/releases/latest \
+    | grep -oP '"browser_download_url":\s*"\K[^"]+xdman_gtk[^"]+amd64\.deb')"
+  if [ -n "${XDM_DEB_URL:-}" ]; then
+    download_and_install_deb "$XDM_DEB_URL"
+    sudo apt-get install -f -y   # resolve any deps the .deb pulled in
   else
-    warn "Could not auto-resolve latest xdman release URL — grab it manually from:"
-    warn "  https://github.com/subhra74/xdm/releases"
+    warn "Could not auto-resolve the xdman .deb URL — grab it manually from:"
+    warn "  https://github.com/subhra74/xdm/releases (look for xdman_gtk_*_amd64.deb)"
   fi
 else
   warn "xdman install is Debian-family only in this script — see https://github.com/subhra74/xdm"
 fi
 
-# Parabolic — polished GUI for yt-dlp downloads, closest to "IDM for YouTube"
-flatpak_install io.gitlab.theevilskeleton.Parabolic
+# Parabolic (GNOME video/audio downloader, GUI over yt-dlp) — the project
+# was renamed from "Nickvision Tube Converter"; its flatpak ID kept the old
+# reverse-DNS name.
+flatpak_install org.nickvision.tubeconverter
 
 ok "Download managers done"

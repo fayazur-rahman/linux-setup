@@ -33,6 +33,12 @@ if ! is_cmd gext; then
   fi
 fi
 
+# pipx installs to ~/.local/bin, which often isn't on PATH yet within this
+# same script invocation (it only gets added to PATH by your shell's rc file
+# on next login). Add it explicitly so `is_cmd gext` below actually finds it
+# instead of falsely reporting it "unavailable" right after installing it.
+export PATH="$HOME/.local/bin:$PATH"
+
 declare -A EXTENSIONS=(
   ["dash-to-panel@jderose9.github.com"]="Dash to Panel"
   ["caffeine@patapon.info"]="Caffeine"
@@ -44,13 +50,19 @@ declare -A EXTENSIONS=(
 )
 
 if is_cmd gext; then
+  # gext defaults to talking to GNOME Shell over DBus, which pops up an
+  # interactive "Install this extension?" confirmation dialog per extension
+  # (same as installing from a browser) — that would silently block a
+  # scripted run. --filesystem installs directly into
+  # ~/.local/share/gnome-shell/extensions and restarts the shell itself, no
+  # dialog needed, which is what we want here.
   for uuid in "${!EXTENSIONS[@]}"; do
     name="${EXTENSIONS[$uuid]}"
-    if gext list 2>/dev/null | grep -q "$uuid"; then
+    if gext --filesystem list -a 2>/dev/null | grep -q "$uuid"; then
       ok "$name already installed — skipping"
     else
       log "Installing extension: $name"
-      gext install "$uuid" || warn "gext failed for $name — install manually from extensions.gnome.org"
+      gext --filesystem install "$uuid" || warn "gext failed for $name — install manually from extensions.gnome.org"
     fi
   done
 else
@@ -60,8 +72,10 @@ else
   done
 fi
 
-log "Once installed, run 'gnome-extensions-app' (Extension Manager) to enable + configure each one."
+log "gext --filesystem restarts GNOME Shell itself after each install on X11."
+log "On Wayland, GNOME Shell can't restart itself live — log out and back in once"
+log "after this module runs, then open 'Extension Manager' to enable + configure each one."
 log "You mentioned you'll share your specific per-extension config later — that will slot in as"
-log "a follow-up module (e.g. modules/14-gnome-extension-config.sh) once you send it."
+log "a follow-up module (e.g. modules/16-gnome-extension-config.sh) once you send it."
 
 ok "GNOME extensions done"
