@@ -15,4 +15,11 @@ pkg_install libreoffice libreoffice
 
 flatpak_install org.onlyoffice.desktopeditors
 
+section "Email (Thunderbird)"
+# Installed via Flatpak rather than `apt install thunderbird` — on recent
+# Ubuntu that apt package is a thin transitional wrapper around the Snap
+# build, and this keeps the whole toolkit snap-free and consistent with how
+# the other desktop apps here are installed.
+flatpak_install org.mozilla.Thunderbird
+
 ok "Office suite done"

@@ -62,12 +62,15 @@ if [ "${#ALL_MODULES[@]}" -eq 0 ]; then
 fi
 
 section "Running ${#ALL_MODULES[@]} module(s) on a ${PKG_FAMILY}-based system"
+
+# Fresh ledgers for this run so the final summary only reflects what
+# actually happened now, not leftovers from a previous run.
+mkdir -p "$LOG_DIR"
+: > "$APPS_LEDGER"
+: > "$EXT_LEDGER"
+
 for module in "${ALL_MODULES[@]}"; do
   run_module "$SCRIPT_DIR/modules/$module"
 done
 
 print_summary
-
-warn "If the NVIDIA driver module ran, REBOOT before relying on GPU acceleration."
-warn "If the monitor-brightness module ran, log out/in for the i2c group change to apply."
-ok "All done."

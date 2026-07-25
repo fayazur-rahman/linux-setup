@@ -28,7 +28,5 @@ sudo usermod -aG i2c "$USER"
 
 warn "Group membership needs a re-login (or reboot) to take effect."
 log "Test with: ddcutil detect   (after re-login)"
-log "GUI slider: install the 'Brightness Control Using ddcutil' GNOME extension"
-log "(handled in the gnome-extensions module) — search it in the Extension Manager."
-
-ok "Monitor brightness setup done"
+log "GUI slider: the 'Monitor Brightness & Volume (ddcutil)' GNOME extension is"
+log "installed automatically by the gnome-extensions module — no manual search needed."

@@ -62,6 +62,7 @@ stack — same script, no editing, on NVIDIA/AMD/Intel/hybrid machines:
 | App | Why |
 |---|---|
 | TeamViewer | control this desktop from your phone when you're away from it |
+| Remmina | remote desktop client (RDP/VNC), added for connecting *to* other machines |
 
 ## 07 — Dev tools
 | App | Why |
@@ -76,6 +77,7 @@ Git is deliberately **not** installed here — you said it's not required.
 |---|---|
 | LibreOffice | general office suite |
 | OnlyOffice Desktop Editors | added on top of LibreOffice — noticeably closer to real MS Office's docx/xlsx/pptx rendering fidelity, useful for client-facing documents |
+| Thunderbird (flatpak) | email client, added on request |
 
 ## 09 — OBS + Discord
 Both installed as requested — OBS for recording/streaming, Discord for chat.
@@ -102,10 +104,21 @@ GNOME extension for an in-panel slider (see module 13).
 
 ## 13 — GNOME extensions
 Installs, via `gext` (gnome-extensions-cli): Dash to Panel, Caffeine, Blur My
-Shell, GSConnect, AppIndicator Support, Clipboard Indicator, Just Perfection —
-the ones you asked for. Uses `gext`'s filesystem backend so the install
-doesn't block on an interactive GNOME popup per extension. A logout/login is
-recommended afterward for GNOME Shell to fully pick them up.
+Shell, GSConnect, AppIndicator Support, Clipboard Indicator, Just Perfection,
+**ArcMenu**, **Monitor Brightness & Volume (ddcutil)**, **Show Desktop
+Applet**, **Spotify Controls + Track Info**, and **System Monitor** — the
+last five added after you shared your actual Extension Manager list. Uses
+`gext`'s filesystem backend so the install doesn't block on an interactive
+GNOME popup per extension. A logout/login is recommended afterward for
+GNOME Shell to fully pick them up.
+
+## 16 — Startup applications
+Creates autostart entries (`~/.config/autostart/*.desktop`) — the same
+mechanism GNOME's own "Startup Applications" tool uses — for: ZapZap,
+Discord, Flameshot, NVIDIA X Server Settings, qBittorrent, Remmina, and
+Spotify, matching what you'd starred manually. Each entry is only created if
+the app is actually installed. "SSH Key Agent" and "xapp-sn-watcher" need no
+action — they're provided by the system/other packages already.
 
 ## 14 — WhatsApp (optional, asks first)
 No native Linux WhatsApp client exists — it's the same web app in every

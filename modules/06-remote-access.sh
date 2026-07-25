@@ -8,15 +8,19 @@ detect_distro
 section "Remote access (TeamViewer)"
 
 if is_cmd teamviewer; then
-  ok "TeamViewer already installed — skipping"
+  ok "TeamViewer (already installed)"
 elif [ "$PKG_FAMILY" = "debian" ]; then
   download_and_install_deb "https://download.teamviewer.com/download/linux/teamviewer_amd64.deb"
-  sudo apt-get install -f -y   # resolve any missing deps pulled in by the .deb
+  spin_run "Resolving TeamViewer dependencies" sudo apt-get install -f -y
 elif [ "$PKG_FAMILY" = "rpm" ]; then
   tmp="$(mktemp --suffix=.rpm)"
-  curl -fsSL "https://download.teamviewer.com/download/linux/teamviewer.x86_64.rpm" -o "$tmp"
-  sudo "$PKG_MANAGER" install -y "$tmp"
+  spin_run "Downloading TeamViewer" curl -fsSL "https://download.teamviewer.com/download/linux/teamviewer.x86_64.rpm" -o "$tmp"
+  spin_run "Installing TeamViewer" sudo "$PKG_MANAGER" install -y "$tmp"
   rm -f "$tmp"
 fi
 
 ok "Remote access done"
+
+section "Remmina (remote desktop client)"
+pkg_install remmina remmina
+pkg_install remmina-plugin-rdp remmina-plugin-rdp 2>/dev/null || true

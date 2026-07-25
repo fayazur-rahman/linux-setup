@@ -28,7 +28,8 @@ linux-setup/
 │   ├── 12-monitor-brightness.sh
 │   ├── 13-gnome-extensions.sh
 │   ├── 14-whatsapp.sh
-│   └── 15-spotify-spotx.sh
+│   ├── 15-spotify-spotx.sh
+│   └── 16-startup-apps.sh
 ├── config/
 │   └── modules.conf          # which modules run, and in what order
 ├── logs/                     # per-module logs, created on first run
@@ -48,28 +49,42 @@ Run as your normal user, **not** as root — it calls `sudo` internally only
 where needed, and primes the sudo session once at the start so you're not
 repeatedly prompted for a password mid-run.
 
-## Output — quiet by default
+## Output — clean, per-item status with a live spinner
 
-Each module's own noisy output (apt/dnf chatter, flatpak "Looking for
-matches", curl progress, etc.) is captured into `logs/<module-name>.log`
-instead of being printed live. On screen you only see one line per module:
+Section headers and a live spinner appear for every package/extension being
+worked on; when it finishes you get a single ✓ or ✗ line — never the raw
+apt/dnf/flatpak/curl output itself. That noisy detail is still captured, just
+into `logs/<module-name>.log` instead of your screen:
 
 ```
-[OK] 03-browsers completed  (log: logs/03-browsers.log)
-[ERROR] 07-dev-tools FAILED — last 25 lines of logs/07-dev-tools.log:
-----------------------------------------------------------------
-    ... actual error output ...
-----------------------------------------------------------------
+==> 03-browsers
+  ⠹ brave-browser
+  ✓ brave-browser
+  ✓ google-chrome-stable (already installed)
+
+==> 07-dev-tools
+  ✓ code
+  ⠴ cloudflare-warp
+  ✗ cloudflare-warp
+      E: Unable to locate package cloudflare-warp
 ```
 
-If a module fails, the last 25 lines of its log print automatically right
-there — no need to go hunting for the error. Full logs for every module
-that ran stay in `logs/` for later reference.
+If something fails, the last real line of its actual output is shown right
+under the ✗ — enough to tell what went wrong without opening a log file, but
+without flooding the screen with the full apt transcript either. The full
+transcript for every package attempted (success or failure) still lives in
+that module's log file for whenever you want to dig further.
+
+At the very end, `install.sh` prints one consolidated report covering the
+whole run: which modules completed, every package newly installed vs.
+already present vs. failed, every GNOME extension installed, and the
+standing next-steps (log out/reboot for extensions, i2c group, NVIDIA driver
+to take effect).
 
 Two modules need to prompt you interactively (a WhatsApp-wrapper yes/no, and
 SpotX's own setup wizard) — `14-whatsapp.sh` and `15-spotify-spotx.sh` run
-with their output attached directly to the terminal instead, since
-redirecting them would hide the prompts you need to answer.
+fully attached to the terminal instead, since redirecting them would hide
+the prompts you need to answer.
 
 See `INSTALLED-APPS.md` for a full list of what each module installs and why.
 
@@ -136,20 +151,37 @@ See `INSTALLED-APPS.md` for a full list of what each module installs and why.
 - **12-monitor-brightness.sh** — `ddcutil` is the Monitorian equivalent for
   external monitors over DDC/CI; needs `i2c-dev` + group membership, both
   handled here, but requires a re-login to take effect.
+- **06-remote-access.sh** — also installs **Remmina** (+ RDP plugin)
+  alongside TeamViewer: TeamViewer is for controlling *this* desktop
+  remotely, Remmina is for connecting *out* to other machines.
+- **08-office-suite.sh** — also installs **Thunderbird** via Flatpak rather
+  than `apt install thunderbird`, since on recent Ubuntu that apt package is
+  a thin transitional wrapper around the Snap build; Flatpak keeps this
+  toolkit snap-free and consistent with how the other desktop apps here are
+  installed.
 - **13-gnome-extensions.sh** — installs Dash to Panel, Caffeine, Blur My
-  Shell, GSConnect, AppIndicator Support, Clipboard Indicator, and Just
-  Perfection via `gext` (gnome-extensions-cli). Two bugs fixed here: (1)
-  `pipx install` puts `gext` in `~/.local/bin`, which often isn't on `PATH`
-  within the same script run — the module now exports that path explicitly
-  right after installing it, instead of the install silently succeeding and
-  then the very next check reporting "gext unavailable". (2) `gext`'s
-  default DBus backend pops up an interactive GNOME confirmation dialog per
-  extension (the same one you'd see installing from a browser) — that would
-  silently block a scripted run, so the module now uses `gext --filesystem`,
-  which installs directly without that dialog. A logout/login afterward lets
+  Shell, GSConnect, AppIndicator Support, Clipboard Indicator, Just
+  Perfection, ArcMenu, Monitor Brightness & Volume (ddcutil), Show Desktop
+  Applet, Spotify Controls + Track Info, and System Monitor via `gext`
+  (gnome-extensions-cli). Two bugs fixed here: (1) `pipx install` puts
+  `gext` in `~/.local/bin`, which often isn't on `PATH` within the same
+  script run — the module now exports that path explicitly right after
+  installing it, instead of the install silently succeeding and then the
+  very next check reporting "gext unavailable". (2) `gext`'s default DBus
+  backend pops up an interactive GNOME confirmation dialog per extension
+  (the same one you'd see installing from a browser) — that would silently
+  block a scripted run, so the module now uses `gext --filesystem`, which
+  installs directly without that dialog. A logout/login afterward lets
   GNOME Shell fully pick the new extensions up. This module intentionally
   stops at *installing* them — per-extension configuration is meant to
   become a follow-up module once you share your settings.
+- **16-startup-apps.sh** — creates `~/.config/autostart/*.desktop` entries
+  (the same mechanism GNOME's own "Startup Applications" tool uses) for
+  ZapZap, Discord, Flameshot, NVIDIA X Server Settings, qBittorrent,
+  Remmina, and Spotify. Runs last in the module order deliberately, since
+  it checks whether each app is actually installed before creating its
+  entry. "SSH Key Agent" and "xapp-sn-watcher" need no action of their own
+  — they're provided by the system already.
 - **15-spotify-spotx.sh** — explicitly avoids the Snap Spotify package,
   since SpotX-Bash refuses to patch it (confirmed by your own run log:
   `Error: Snap client not supported`). Installs from Spotify's official APT

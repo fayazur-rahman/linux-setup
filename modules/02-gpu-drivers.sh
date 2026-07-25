@@ -95,6 +95,8 @@ install_nvidia() {
       log "Switch GPUs with: sudo prime-select nvidia|intel|on-demand"
     fi
 
+    pkg_install nvidia-settings nvidia-settings
+
   elif [ "$PKG_FAMILY" = "rpm" ]; then
     warn "RPM-based NVIDIA install depends on your distro (typically RPM Fusion)."
     warn "See: https://rpmfusion.org/Howto/NVIDIA"
