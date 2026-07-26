@@ -120,17 +120,22 @@ Spotify, matching what you'd starred manually. Each entry is only created if
 the app is actually installed. "SSH Key Agent" and "xapp-sn-watcher" need no
 action — they're provided by the system/other packages already.
 
-## 14 — WhatsApp (optional, asks first)
+## 14 — WhatsApp (ZapZap)
 No native Linux WhatsApp client exists — it's the same web app in every
-browser, so there's nothing to meaningfully install. This module just asks
-whether you want a dedicated wrapper window (ZapZap) instead of a browser
-tab; skip it and use web.whatsapp.com if a tab is fine.
+browser, so there's nothing to meaningfully install. **ZapZap** (a Flatpak
+Electron-style wrapper) is installed unconditionally: gives you a dedicated
+window with a taskbar icon and native notifications instead of a browser tab.
+This used to be a yes/no prompt; now it just installs.
 
 ## 15 — Spotify + SpotX
 Installs Spotify from the **official apt repo** (not Snap — SpotX explicitly
 refuses to patch the Snap build, which is exactly the error you hit on your
 first run), then runs the SpotX-Bash adblock/experimental-features patcher
-against it.
+against it. The Spotify tier (Free vs Premium) is asked once at the very
+start of `install.sh` and passed to SpotX as `--premium` when appropriate.
+
+On Fedora the Spotify Flatpak is installed instead (un-patched — patching a
+Flatpak install is fragile enough that I don't automate it).
 
 ---
 

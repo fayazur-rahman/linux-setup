@@ -322,7 +322,7 @@ download_and_install_deb() {
 # third-party interactive installer like SpotX) are listed in
 # INTERACTIVE_MODULES and run with output attached directly to the terminal
 # instead, since redirecting their output would hide the prompts themselves.
-INTERACTIVE_MODULES=("14-whatsapp" "15-spotify-spotx")
+INTERACTIVE_MODULES=("15-spotify-spotx")
 
 declare -a MODULES_OK=()
 declare -a MODULES_FAILED=()

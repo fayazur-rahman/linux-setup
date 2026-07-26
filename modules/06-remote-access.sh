@@ -4,6 +4,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 detect_distro
+detect_desktop
 
 section "Remote access (TeamViewer)"
 
@@ -21,6 +22,12 @@ fi
 
 ok "Remote access done"
 
-section "Remmina (remote desktop client)"
-pkg_install remmina remmina
-pkg_install remmina-plugin-rdp remmina-plugin-rdp 2>/dev/null || true
+# Remmina: skip on Fedora KDE — the spin ships KRDC (KDE's own RDP/VNC
+# client) which covers the same use case natively.
+if [ "$DISTRO_ID" = "fedora" ] && [ "$DESKTOP_ENV" = "kde" ]; then
+  ok "Remmina (skipped — Fedora KDE ships KRDC for the same job)"
+else
+  section "Remmina (remote desktop client)"
+  pkg_install remmina remmina
+  pkg_install remmina-plugin-rdp remmina-plugin-rdp 2>/dev/null || true
+fi

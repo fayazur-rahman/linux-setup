@@ -69,6 +69,18 @@ Run as your normal user, **not** as root — it calls `sudo` internally only
 where needed, and primes the sudo session once at the start so you're not
 repeatedly prompted for a password mid-run.
 
+## Upfront prompt: Spotify tier
+
+At the very start of a run, `install.sh` asks one question — **Free or
+Premium** — and writes the answer to `logs/_prefs.env`. The Spotify module
+reads that later and passes `--premium` to SpotX when appropriate (per
+SpotX-Bash docs: free-tier patches are the default; paid-Premium users need
+`-p`/`--premium`, otherwise playback behaves oddly). No other prompt
+interrupts the run once it starts.
+
+WhatsApp (ZapZap) used to ask a y/N question — it's now installed
+unconditionally.
+
 ## Output — clean, per-item status with a live spinner
 
 Section headers and a live spinner appear for every package/extension being
@@ -208,6 +220,32 @@ See `INSTALLED-APPS.md` for a full list of what each module installs and why.
   repo instead, then runs SpotX against that.
 
 ## Fedora / KDE specifics
+
+### Apps skipped on Fedora KDE Plasma
+
+The Fedora KDE spin ships a fairly complete set of desktop apps out of the
+box, so several things this toolkit installs elsewhere would just duplicate
+existing apps or land unused. These are automatically skipped when
+`DISTRO_ID=fedora` and `DESKTOP_ENV=kde`:
+
+| Skipped on Fedora KDE | Because Plasma already ships |
+|---|---|
+| LibreOffice | LibreOffice (via the `kde-desktop-environment` group) |
+| OnlyOffice | LibreOffice covers the same ground; OnlyOffice is redundant here |
+| Thunderbird | KMail + Kontact (via `kde-pim`) |
+| Flameshot | Spectacle (already bound to PrtScn, portal-integrated) |
+| Remmina | KRDC (RDP + VNC, KDE-native) |
+| Dash to Panel, Blur My Shell, Clipboard Indicator, AppIndicator Support, Just Perfection, ArcMenu, Show Desktop Applet, System Monitor | Plasma's own panel, KWin blur, Klipper, system-tray, App menu, task manager, monitor widget — all built in |
+| Monitor Brightness & Volume (ddcutil) extension | Plasma's brightness applet uses ddcutil natively |
+| Spotify Controls + Track Info extension | Plasma's Media Player widget (also MPRIS-based) |
+| GSConnect extension | KDE Connect (built into Plasma) |
+| gnome-tweaks, gnome-extensions-app, Synaptic, File Roller | Plasma's System Settings + Discover; Ark instead of File Roller |
+
+The `13-gnome-extensions.sh` module skips entirely on KDE (GNOME Shell
+extensions don't apply there); TeamViewer is still installed since it's for
+being reached remotely from a phone, which KRDC doesn't do.
+
+### Fedora-specific plumbing
 
 - **00-system-update.sh** — on Fedora, enables **RPM Fusion** (free +
   nonfree), swaps Fedora's limited `ffmpeg-free` for the full RPM Fusion

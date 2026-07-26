@@ -39,6 +39,33 @@ fi
 log "This script will use 'sudo' repeatedly — you may be prompted for your password."
 sudo -v   # prime sudo credential cache once up front
 
+# --- Upfront preferences ------------------------------------------------------
+# We ask everything the run needs to know once, up front, rather than
+# interrupting the flow mid-way. Right now that's just the Spotify tier
+# (free vs premium) — SpotX applies different patches for each. The answer
+# gets exported AND written to a small state file so 15-spotify-spotx.sh
+# can read it regardless of subprocess isolation.
+PREFS_FILE="$SCRIPT_DIR/logs/_prefs.env"
+mkdir -p "$SCRIPT_DIR/logs"
+
+term ""
+term "${C_YELLOW}Before we start — one quick question:${C_RESET}"
+term "Are you a Spotify Free or Premium user?"
+term "  This lets SpotX apply the right ad-block / patch set."
+term "  (Free = default patches; Premium = SpotX runs with the --premium flag.)"
+SPOTIFY_TIER=""
+while [ -z "$SPOTIFY_TIER" ]; do
+  read -r -p "  [f] Free   [p] Premium : " ans
+  case "${ans,,}" in
+    f|free)    SPOTIFY_TIER="free" ;;
+    p|premium) SPOTIFY_TIER="premium" ;;
+    *)         term "  Please answer 'f' or 'p'." ;;
+  esac
+done
+echo "SPOTIFY_TIER=${SPOTIFY_TIER}" > "$PREFS_FILE"
+export SPOTIFY_TIER
+term ""
+
 # Keep sudo alive for the duration of a long run
 ( while true; do sudo -n true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done ) 2>/dev/null &
 SUDO_KEEPALIVE_PID=$!

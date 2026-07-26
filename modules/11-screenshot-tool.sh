@@ -22,7 +22,15 @@ source "$SCRIPT_DIR/lib/common.sh"
 detect_distro
 detect_desktop
 
-section "Screenshot tool (Flameshot)"
+section "Screenshot tool"
+
+# Fedora KDE ships Spectacle preinstalled, already bound to PrtScn and
+# portal-integrated. Flameshot on top of that is redundant, so skip it there.
+# Debian/Ubuntu and Fedora GNOME still get Flameshot as the Lightshot-equivalent.
+if [ "$DISTRO_ID" = "fedora" ] && [ "$DESKTOP_ENV" = "kde" ]; then
+  ok "Flameshot (skipped — Fedora KDE ships Spectacle, already bound to PrtScn)"
+  exit 0
+fi
 
 flatpak_install org.flameshot.Flameshot
 

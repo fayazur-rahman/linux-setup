@@ -31,7 +31,7 @@ _autostart() {
   local desktop_file="$AUTOSTART_DIR/${id}.desktop"
 
   if [ -n "$check" ] && ! eval "$check" >/dev/null 2>&1; then
-    warn "$name not installed — skipping autostart entry"
+    ok "$name (skipped — not installed)"
     return
   fi
 
