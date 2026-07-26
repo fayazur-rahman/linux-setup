@@ -71,6 +71,35 @@ detect_distro() {
   log "Detected distro: ${DISTRO_ID} (family: ${PKG_FAMILY}, manager: ${PKG_MANAGER})"
 }
 
+# ---------- desktop environment detection --------------------------------------
+# Sets DESKTOP_ENV to "gnome", "kde", or "other". Modules that are
+# environment-specific (GNOME extensions, gnome-tweaks, Spectacle vs
+# Flameshot defaults, etc.) branch on this so the same toolkit works on both
+# Ubuntu (GNOME) and Fedora KDE Plasma without per-machine editing.
+detect_desktop() {
+  local d="${XDG_CURRENT_DESKTOP:-}${DESKTOP_SESSION:-}"
+  # Lowercase for matching, tolerant of values like "ubuntu:GNOME" or
+  # "KDE" / "plasma" / "plasmawayland".
+  d="$(printf '%s' "$d" | tr '[:upper:]' '[:lower:]')"
+  case "$d" in
+    *kde*|*plasma*) DESKTOP_ENV="kde" ;;
+    *gnome*|*unity*) DESKTOP_ENV="gnome" ;;
+    *)
+      # Fallback: sniff running processes if the env vars were empty (e.g.
+      # running over SSH without a session dbus).
+      if pgrep -x plasmashell >/dev/null 2>&1; then
+        DESKTOP_ENV="kde"
+      elif pgrep -x gnome-shell >/dev/null 2>&1; then
+        DESKTOP_ENV="gnome"
+      else
+        DESKTOP_ENV="other"
+      fi
+      ;;
+  esac
+  export DESKTOP_ENV
+  log "Detected desktop environment: ${DESKTOP_ENV}"
+}
+
 # ---------- "is X already there?" checks ---------------------------------------
 is_cmd()        { command -v "$1" >/dev/null 2>&1; }
 is_apt_pkg_installed() { dpkg -s "$1" >/dev/null 2>&1; }
@@ -203,6 +232,38 @@ rpm_refresh_once() {
     spin_run "Refreshing package metadata" sudo "$PKG_MANAGER" makecache -y
     export RPM_REFRESHED=1
   fi
+}
+
+# ---------- RPM Fusion (Fedora only) -------------------------------------------
+# Fedora deliberately ships without proprietary/patent-encumbered packages —
+# NVIDIA drivers, the full ffmpeg build, many codecs, and some apps live in
+# the RPM Fusion free + nonfree repos instead. Several modules (GPU drivers,
+# media players) can't work until these are enabled, so this is the Fedora
+# analogue of "enable universe + add the PPAs" on the Ubuntu side. No-op on
+# non-Fedora / non-RPM systems, and skipped once already enabled.
+ensure_rpmfusion() {
+  # Only applies to Fedora (and close Fedora derivatives). No-op everywhere else.
+  local is_fedora=0
+  if [ "${DISTRO_ID:-}" = "fedora" ]; then
+    is_fedora=1
+  elif [ "${PKG_FAMILY:-}" = "rpm" ]; then
+    case "${DISTRO_ID_LIKE:-}" in *fedora*) is_fedora=1 ;; esac
+  fi
+  [ "$is_fedora" -eq 1 ] || return 0
+
+  if rpm -q rpmfusion-free-release >/dev/null 2>&1 && rpm -q rpmfusion-nonfree-release >/dev/null 2>&1; then
+    ok "RPM Fusion (free + nonfree) already enabled"
+    return 0
+  fi
+
+  local ver
+  ver="$(rpm -E %fedora)"
+  spin_run "RPM Fusion free repo" sudo "$PKG_MANAGER" install -y \
+    "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${ver}.noarch.rpm"
+  spin_run "RPM Fusion nonfree repo" sudo "$PKG_MANAGER" install -y \
+    "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${ver}.noarch.rpm"
+  export RPM_REFRESHED=""   # force a metadata refresh now the new repos exist
+  rpm_refresh_once
 }
 
 # ---------- flatpak helper -----------------------------------------------------
@@ -346,10 +407,19 @@ print_summary() {
   [ "${#MODULES_FAILED[@]}" -gt 0 ] && term "\nFull logs for failed modules are in: ${LOG_DIR}/"
 
   term "\n${C_YELLOW}Next steps:${C_RESET}"
-  term "  - Log out and back in (or reboot) — needed for GNOME extensions to fully"
-  term "    load, the i2c group change (monitor brightness) to apply, and the"
-  term "    NVIDIA driver (if installed) to take effect."
-  term "  - Open Extension Manager afterward to confirm/configure extensions."
+  if [ "${DESKTOP_ENV:-}" = "kde" ]; then
+    term "  - Log out and back in (or reboot) — needed for the i2c group change"
+    term "    (monitor brightness), the input method (Bangla typing), and the"
+    term "    NVIDIA driver (if installed) to take effect."
+    term "  - On Fedora with an NVIDIA card, wait for akmod to finish building the"
+    term "    module BEFORE rebooting (see the GPU module's note)."
+    term "  - Add any Plasma widgets you want via right-click panel > Add Widgets."
+  else
+    term "  - Log out and back in (or reboot) — needed for GNOME extensions to fully"
+    term "    load, the i2c group change (monitor brightness) to apply, and the"
+    term "    NVIDIA driver (if installed) to take effect."
+    term "  - Open Extension Manager afterward to confirm/configure extensions."
+  fi
   term "  - Sign into Brave/Chrome, TeamViewer, Discord, Spotify, Thunderbird etc."
   term "    manually — none of that is scriptable without your credentials."
 }

@@ -17,10 +17,10 @@ fi
 pkg_install obs-studio obs-studio
 
 if is_cmd discord; then
-  ok "Discord already installed — skipping"
+  ok "Discord (already installed)"
 elif [ "$PKG_FAMILY" = "debian" ]; then
   download_and_install_deb "https://discord.com/api/download?platform=linux&format=deb"
-  sudo apt-get install -f -y
+  spin_run "Resolving Discord dependencies" sudo apt-get install -f -y
 else
   flatpak_install com.discordapp.Discord
 fi

@@ -1,8 +1,28 @@
 # linux-setup — portable post-install toolkit
 
 A decentralized, idempotent setup script for fresh Debian/Ubuntu (apt) or
-Fedora/RHEL (dnf/yum) installs. Detects the package family automatically and
-skips anything already installed, so it's safe to re-run.
+Fedora (dnf) installs, on either GNOME or KDE Plasma. It auto-detects both the
+package family *and* the desktop environment and adapts each module
+accordingly, so the same toolkit runs unchanged on Ubuntu GNOME and Fedora
+KDE Plasma. It skips anything already installed, so it's safe to re-run.
+
+## Distro + desktop support
+
+| | Ubuntu / Debian (apt) | Fedora (dnf) |
+|---|---|---|
+| **GNOME** | fully supported | fully supported |
+| **KDE Plasma** | supported* | fully supported |
+
+Detection is automatic (`detect_distro` + `detect_desktop` in
+`lib/common.sh`). On Fedora, the toolkit also enables **RPM Fusion**
+(free + nonfree) and the multimedia codec group up front, since NVIDIA
+drivers, the full ffmpeg build, and VLC codecs live there. GNOME-only pieces
+(GNOME Tweaks, GNOME Shell extensions) are skipped cleanly on KDE, where
+Plasma's built-in equivalents cover the same ground.
+
+\* On KDE the GNOME-extensions module is skipped and the screenshot/brightness
+modules defer to Plasma's native tools (Spectacle, the built-in brightness
+applet) — see the per-module notes below.
 
 ## Structure
 
@@ -187,7 +207,43 @@ See `INSTALLED-APPS.md` for a full list of what each module installs and why.
   `Error: Snap client not supported`). Installs from Spotify's official APT
   repo instead, then runs SpotX against that.
 
-## Explicitly left out (per your instructions)
+## Fedora / KDE specifics
+
+- **00-system-update.sh** — on Fedora, enables **RPM Fusion** (free +
+  nonfree), swaps Fedora's limited `ffmpeg-free` for the full RPM Fusion
+  `ffmpeg`, and installs the `multimedia` codec group. This is the Fedora
+  analogue of "enable universe + add PPAs" and is a prerequisite for the
+  GPU and media modules. No-op on Debian/Ubuntu.
+- **02-gpu-drivers.sh (Fedora NVIDIA)** — installs RPM Fusion's
+  `akmod-nvidia` (which auto-rebuilds the kernel module on every kernel
+  update) plus `xorg-x11-drv-nvidia-cuda`. For an RTX 50-series (Blackwell)
+  card it first writes `%_with_kmod_nvidia_open 1` to
+  `/etc/rpm/macros.nvidia-kmod` so akmod builds the **open** module — the
+  proprietary one won't initialize a Blackwell card. akmod needs a few
+  minutes to compile before you reboot; the module tells you how to check.
+- **10-bangla-typing.sh (Fedora)** — installs OpenBangla Keyboard from the
+  maintainer's COPR (`badshah/openbangla-keyboard`), picking the **Fcitx5**
+  backend on KDE (Plasma's iBus support is poor) or the **iBus** backend on
+  GNOME.
+- **11-screenshot-tool.sh (KDE)** — installs Flameshot but does *not* rebind
+  PrtScn; KDE ships **Spectacle** already bound and portal-integrated. The
+  module tells you how to point PrtScn at Flameshot via System Settings if
+  you prefer it.
+- **12-monitor-brightness.sh (KDE)** — `ddcutil` + i2c group setup is the
+  same, but on KDE the GUI slider is Plasma's built-in brightness applet
+  (which uses ddcutil under the hood), not a GNOME extension.
+- **13-gnome-extensions.sh (KDE)** — skipped entirely. GNOME Shell
+  extensions don't exist on Plasma; the module prints the KDE-native
+  equivalents (panel, Klipper, system-tray indicators, brightness applet)
+  and exits cleanly.
+- **01-cli-essentials.sh** — GNOME Tweaks / Extension Manager and Synaptic
+  are installed only where they fit (GNOME / apt respectively); on KDE the
+  archive tool is **Ark** instead of File Roller.
+- **15-spotify-spotx.sh (Fedora)** — SpotX patches a native deb install and
+  can't auto-patch on Fedora, so the module installs the Spotify **Flatpak**
+  (un-patched) instead of failing.
+
+
 
 ESET, Revo Uninstaller, WinRAR (replaced by built-in Archive Manager +
 unrar/p7zip), Epic Games launcher, Rockstar launcher, Steam, Git, Adobe

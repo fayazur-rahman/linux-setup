@@ -6,10 +6,31 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 detect_distro
-[ "$PKG_FAMILY" = "debian" ] && apt_update_once
-[ "$PKG_FAMILY" = "rpm" ] && rpm_refresh_once
+detect_desktop
 
 section "GNOME Tweaks + Extension Manager + Extensions"
+
+# GNOME Shell extensions are a GNOME-only concept — none of this applies on
+# KDE Plasma (which uses its own Widgets/KWin scripts instead). Skip the
+# whole module cleanly rather than installing gnome-tweaks/gext onto a KDE
+# session where they'd be useless.
+if [ "$DESKTOP_ENV" != "gnome" ]; then
+  warn "Desktop is '${DESKTOP_ENV}', not GNOME — skipping GNOME extensions module."
+  if [ "$DESKTOP_ENV" = "kde" ]; then
+    log "On KDE Plasma, the equivalents are handled natively:"
+    log "  - panel/taskbar   → built in (no Dash-to-Panel needed)"
+    log "  - Caffeine        → 'Caffeine' widget or the built-in DND/keep-awake"
+    log "  - clipboard        → Klipper (built in, in the system tray)"
+    log "  - app indicators   → built into the Plasma system tray"
+    log "  - monitor brightness → Plasma's built-in brightness applet (+ ddcutil)"
+    log "  Add widgets via: right-click panel > Add Widgets, or 'Get New Widgets'."
+  fi
+  ok "GNOME extensions module skipped (not applicable on this desktop)"
+  exit 0
+fi
+
+[ "$PKG_FAMILY" = "debian" ] && apt_update_once
+[ "$PKG_FAMILY" = "rpm" ] && rpm_refresh_once
 
 pkg_install gnome-tweaks gnome-tweaks
 if [ "$PKG_FAMILY" = "debian" ]; then

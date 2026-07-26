@@ -30,6 +30,7 @@ if [ "$EUID" -eq 0 ]; then
 fi
 
 detect_distro
+detect_desktop
 if [ "$PKG_FAMILY" = "unknown" ]; then
   err "Could not detect a supported package manager (apt/dnf/yum). Aborting."
   exit 1

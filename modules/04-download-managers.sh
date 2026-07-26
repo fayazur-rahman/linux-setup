@@ -35,13 +35,24 @@ elif [ "$PKG_FAMILY" = "debian" ]; then
     | grep -oP '"browser_download_url":\s*"\K[^"]+xdman_gtk[^"]+amd64\.deb')"
   if [ -n "${XDM_DEB_URL:-}" ]; then
     download_and_install_deb "$XDM_DEB_URL"
-    sudo apt-get install -f -y   # resolve any deps the .deb pulled in
+    spin_run "Resolving xdman dependencies" sudo apt-get install -f -y
   else
     warn "Could not auto-resolve the xdman .deb URL — grab it manually from:"
     warn "  https://github.com/subhra74/xdm/releases (look for xdman_gtk_*_amd64.deb)"
   fi
-else
-  warn "xdman install is Debian-family only in this script — see https://github.com/subhra74/xdm"
+elif [ "$PKG_FAMILY" = "rpm" ]; then
+  log "Installing xtreme download manager (xdman) from latest GitHub .rpm release ..."
+  XDM_RPM_URL="$(curl -fsSL https://api.github.com/repos/subhra74/xdm/releases/latest \
+    | grep -oP '"browser_download_url":\s*"\K[^"]+xdman_gtk[^"]+\.x86_64\.rpm')"
+  if [ -n "${XDM_RPM_URL:-}" ]; then
+    tmp="$(mktemp --suffix=.rpm)"
+    spin_run "Downloading xdman" curl -fsSL "$XDM_RPM_URL" -o "$tmp"
+    spin_run "Installing xdman" sudo "$PKG_MANAGER" install -y "$tmp"
+    rm -f "$tmp"
+  else
+    warn "Could not auto-resolve the xdman .rpm URL — grab it manually from:"
+    warn "  https://github.com/subhra74/xdm/releases (look for xdman_gtk-*.x86_64.rpm)"
+  fi
 fi
 
 # Parabolic (GNOME video/audio downloader, GUI over yt-dlp) — the project

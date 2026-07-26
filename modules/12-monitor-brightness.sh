@@ -7,6 +7,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 detect_distro
+detect_desktop
 
 section "Monitor brightness (Monitorian replacement)"
 
@@ -28,5 +29,11 @@ sudo usermod -aG i2c "$USER"
 
 warn "Group membership needs a re-login (or reboot) to take effect."
 log "Test with: ddcutil detect   (after re-login)"
-log "GUI slider: the 'Monitor Brightness & Volume (ddcutil)' GNOME extension is"
-log "installed automatically by the gnome-extensions module — no manual search needed."
+if [ "$DESKTOP_ENV" = "kde" ]; then
+  log "On KDE Plasma, external-monitor brightness over DDC/CI is supported natively:"
+  log "  System Settings > Power Management (or the battery/brightness applet)."
+  log "  Plasma uses ddcutil under the hood, so the group setup above still applies."
+else
+  log "GUI slider: the 'Monitor Brightness & Volume (ddcutil)' GNOME extension is"
+  log "installed automatically by the gnome-extensions module — no manual search needed."
+fi

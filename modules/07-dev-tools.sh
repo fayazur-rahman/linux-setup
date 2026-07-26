@@ -67,9 +67,17 @@ elif [ "$PKG_FAMILY" = "debian" ]; then
     warn "Could not find a working Cloudflare WARP repo for this distro/release."
     warn "Check current supported codenames at: https://pkg.cloudflareclient.com/"
   fi
+elif [ "$PKG_FAMILY" = "rpm" ]; then
+  # Cloudflare publishes an official yum repo. Their pubkey needed refreshing
+  # for repos added before 2025-09-12; on a fresh install we just import the
+  # current key and drop in the repo file, then install.
+  log "Adding Cloudflare WARP yum repo ..."
+  curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | sudo tee /etc/yum.repos.d/cloudflare-warp.repo >/dev/null
+  rpm_refresh_once
+  pkg_install cloudflare-warp cloudflare-warp
 else
-  warn "Cloudflare WARP repo setup in this script targets Debian/Ubuntu only."
-  warn "For RPM distros see: https://pkg.cloudflareclient.com/"
+  warn "Cloudflare WARP repo setup in this script targets Debian/Ubuntu and Fedora only."
+  warn "See: https://pkg.cloudflareclient.com/"
 fi
 
 # git intentionally skipped per your instruction — uncomment if needed later:

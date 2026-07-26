@@ -12,8 +12,16 @@ detect_distro
 section "Spotify + SpotX"
 
 if [ "$PKG_FAMILY" != "debian" ]; then
-  warn "SpotX-Bash targets APT-based distros per upstream docs — skipping on this RPM system."
-  warn "See https://github.com/SpotX-Official/SpotX-Bash for other install paths."
+  # SpotX-Bash patches the native (deb-installed) client and explicitly does
+  # NOT support Snap; on Fedora there's no official apt-style native package
+  # in the same way. Install the Flatpak so you still get Spotify — just
+  # un-patched. (SpotX can patch a Flatpak install too, but that's a more
+  # involved, breakage-prone path we don't automate here.)
+  warn "SpotX-Bash targets APT-based native installs — can't auto-patch on Fedora."
+  log "Installing the Spotify Flatpak instead (un-patched, but you still get the app)."
+  flatpak_install com.spotify.Client
+  warn "To ad-block a Flatpak Spotify you'd run SpotX with a custom -P path — see"
+  warn "  https://github.com/SpotX-Official/SpotX-Bash  (not automated here)."
   exit 0
 fi
 

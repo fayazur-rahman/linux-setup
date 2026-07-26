@@ -98,10 +98,38 @@ install_nvidia() {
     pkg_install nvidia-settings nvidia-settings
 
   elif [ "$PKG_FAMILY" = "rpm" ]; then
-    warn "RPM-based NVIDIA install depends on your distro (typically RPM Fusion)."
-    warn "See: https://rpmfusion.org/Howto/NVIDIA"
-    if [ "$IS_BLACKWELL" -eq 1 ]; then
-      warn "Make sure to pick the -open kmod variant — required for RTX 50-series."
+    if [ "$DISTRO_ID" = "fedora" ]; then
+      # Fedora path: RPM Fusion's akmod-nvidia is the recommended install —
+      # DNF owns the packages and akmods auto-rebuilds the kernel module on
+      # every kernel update (no more "driver broke after update").
+      ensure_rpmfusion
+
+      if [ "$IS_BLACKWELL" -eq 1 ]; then
+        # RTX 50-series (Blackwell) needs the OPEN kernel module. On Fedora
+        # that's selected by setting this rpmbuild macro BEFORE akmod builds,
+        # otherwise akmod-nvidia compiles the proprietary module (which won't
+        # initialize a Blackwell card — RmInitAdapter / "requires use of the
+        # NVIDIA open kernel modules").
+        warn "RTX 50-series (Blackwell) detected — forcing the -open kmod variant."
+        if ! grep -q '_with_kmod_nvidia_open' /etc/rpm/macros.nvidia-kmod 2>/dev/null; then
+          echo '%_with_kmod_nvidia_open 1' | sudo tee /etc/rpm/macros.nvidia-kmod >/dev/null
+        fi
+      fi
+
+      pkg_install akmod-nvidia akmod-nvidia
+      # CUDA/VDPAU/VAAPI userspace + the settings GUI.
+      pkg_install xorg-x11-drv-nvidia-cuda xorg-x11-drv-nvidia-cuda
+      pkg_install nvidia-settings nvidia-settings
+
+      warn "akmod must finish COMPILING the module before you reboot. Watch it with:"
+      warn "  modinfo -k \$(uname -r) nvidia   # should print a version once built"
+      warn "Give it a few minutes after this module finishes; do NOT reboot until it does."
+    else
+      warn "RPM-based NVIDIA install here targets Fedora specifically."
+      warn "For other RPM distros see: https://rpmfusion.org/Howto/NVIDIA"
+      if [ "$IS_BLACKWELL" -eq 1 ]; then
+        warn "Make sure to pick the -open kmod variant — required for RTX 50-series."
+      fi
     fi
   fi
 

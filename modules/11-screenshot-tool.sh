@@ -20,12 +20,13 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 detect_distro
+detect_desktop
 
 section "Screenshot tool (Flameshot)"
 
 flatpak_install org.flameshot.Flameshot
 
-if is_cmd gsettings; then
+if [ "$DESKTOP_ENV" = "gnome" ] && is_cmd gsettings; then
   log "Disabling GNOME's default PrtScn bindings so Flameshot can claim the key ..."
   gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]" 2>/dev/null || true
   gsettings set org.gnome.settings-daemon.plugins.media-keys screenshot "[]" 2>/dev/null || true
@@ -45,7 +46,18 @@ if is_cmd gsettings; then
   gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"$CUSTOM_PATH" name "Flameshot" 2>/dev/null || true
   gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"$CUSTOM_PATH" command "flatpak run org.flameshot.Flameshot gui" 2>/dev/null || true
   gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"$CUSTOM_PATH" binding "Print" 2>/dev/null || true
+  warn "If capture comes out blank on Wayland, log into 'Ubuntu on Xorg' (GDM gear icon) as a fallback."
+
+elif [ "$DESKTOP_ENV" = "kde" ]; then
+  # KDE Plasma ships Spectacle, already bound to PrtScn and well-integrated
+  # with the KWin screenshot portal — arguably a better Lightshot-equivalent
+  # on KDE than Flameshot. We still install Flameshot (you may prefer its
+  # annotation UI), but we DON'T rebind PrtScn: on KDE that's done through
+  # System Settings > Shortcuts, and stomping on it from a script is fragile.
+  log "KDE detected — Spectacle is already installed and bound to PrtScn by default."
+  log "Flameshot is installed too; to make PrtScn open Flameshot instead, set it in"
+  log "System Settings > Shortcuts > Custom Shortcuts, command:"
+  log "  flatpak run org.flameshot.Flameshot gui"
 fi
 
-warn "If capture comes out blank on Wayland, log into 'Ubuntu on Xorg' (GDM gear icon) as a fallback."
 ok "Screenshot tool done"

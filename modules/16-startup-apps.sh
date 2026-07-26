@@ -53,14 +53,31 @@ EOF
 }
 
 _autostart "zapzap"            "ZapZap"                 "flatpak run com.rtosta.zapzap"      "is_flatpak_installed com.rtosta.zapzap"
-_autostart "discord"           "Discord"                "discord"                             "is_cmd discord"
 _autostart "flameshot"         "Flameshot"               "flatpak run org.flameshot.Flameshot" "is_flatpak_installed org.flameshot.Flameshot"
 _autostart "nvidia-settings"   "NVIDIA X Server Settings" "nvidia-settings"                    "is_cmd nvidia-settings"
 _autostart "qbittorrent"       "qBittorrent"             "qbittorrent"                         "is_cmd qbittorrent"
 _autostart "remmina"           "Remmina Applet"          "remmina"                             "is_cmd remmina"
-_autostart "spotify"           "Spotify"                 "spotify"                             "is_cmd spotify"
 
-log "Autostart entries live in $AUTOSTART_DIR — remove a file there any time to stop"
-log "that app launching at login, or manage them via GNOME Tweaks > Startup Applications."
+# Discord + Spotify can be native (Debian) or flatpak (Fedora). Pick whichever
+# is actually present, preferring the native command if both somehow exist.
+if is_cmd discord; then
+  _autostart "discord" "Discord" "discord" ""
+elif is_flatpak_installed com.discordapp.Discord; then
+  _autostart "discord" "Discord" "flatpak run com.discordapp.Discord" ""
+else
+  warn "Discord not installed — skipping autostart entry"
+fi
+
+if is_cmd spotify; then
+  _autostart "spotify" "Spotify" "spotify" ""
+elif is_flatpak_installed com.spotify.Client; then
+  _autostart "spotify" "Spotify" "flatpak run com.spotify.Client" ""
+else
+  warn "Spotify not installed — skipping autostart entry"
+fi
+
+log "Autostart entries live in $AUTOSTART_DIR (freedesktop standard — works on both"
+log "GNOME and KDE). Remove a file there to stop that app launching at login, or"
+log "manage them via GNOME Tweaks / KDE System Settings > Autostart."
 
 ok "Startup applications done"
