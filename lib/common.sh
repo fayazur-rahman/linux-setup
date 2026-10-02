@@ -1,425 +1,443 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# lib/common.sh — shared helpers sourced by every module in modules/
-# Provides: distro detection, idempotent package installs with a live
-# spinner + tick/cross result per item, flatpak helpers, "already installed?"
-# checks, and a module runner that keeps full noisy output in a per-module
-# log file while showing only clean status lines on screen.
+# lib/common.sh — shared helpers sourced by install.sh and every module.
+#
+#   - distro + desktop detection
+#   - idempotent installers (native package, Flatpak, .deb/.rpm download) that
+#     skip anything already present, natively OR as a Flatpak
+#   - a live spinner with elapsed time, then one clean ✓ / ✗ line per item
+#   - focused error excerpts + a plain-language hint when something fails
+#   - a run ledger that feeds the final summary across all modules
+#
+# Raw command output never reaches the screen: it goes to logs/<module>.log.
+# Everything the user should see is written to file descriptor 3, which
+# install.sh points at the real terminal before any redirection happens.
 # ==============================================================================
 
 set -uo pipefail
 
-# ---------- terminal channel (fd 3) --------------------------------------------
-# Modules run with their own stdout/stderr redirected to a per-module log
-# file so raw apt/flatpak/curl output never floods the screen. But section
-# headers, spinners, and per-item ✓/✗ results should ALWAYS reach the real
-# terminal regardless of that redirection. fd 3 is a duplicate of the
-# terminal opened once (by install.sh, before any redirection happens) and
-# inherited by every module subprocess — writing to it bypasses whatever
-# fd 1/2 happen to be pointed at in the current process.
-#
-# Guarded so this is also safe if a module is ever run standalone (not
-# through install.sh): if fd 3 isn't already open, open it from the current
-# stdout.
+# fd 3 = the real terminal. If a module is run on its own (not via
+# install.sh), fall back to the current stdout.
 if ! { true >&3; } 2>/dev/null; then
   exec 3>&1
 fi
 
-term() { printf '%b\n' "$*" >&3; }
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOG_DIR="$ROOT_DIR/logs"
+LEDGER="$LOG_DIR/_ledger.tsv"
+PREFS_FILE="$LOG_DIR/_prefs.env"
 
-# ---------- logging -------------------------------------------------------------
-# log()   → detailed narration, goes to the module's log file only (quiet).
-# ok()/warn()/err()/section() → always visible on the real terminal (fd 3),
-#           since these are our own short, curated status lines, not raw
-#           command output.
-C_RESET='\033[0m'; C_GREEN='\033[0;32m'; C_YELLOW='\033[0;33m'; C_RED='\033[0;31m'; C_BLUE='\033[0;34m'; C_DIM='\033[2m'
+# ---------- colours --------------------------------------------------------------
+if [ -t 3 ] && [ -z "${NO_COLOR:-}" ]; then
+  C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
+  C_RED=$'\033[38;5;203m'; C_GREEN=$'\033[38;5;114m'; C_YELLOW=$'\033[38;5;221m'
+  C_BLUE=$'\033[38;5;75m'; C_CYAN=$'\033[38;5;80m'; C_GREY=$'\033[38;5;245m'
+  IS_TTY=1
+else
+  C_RESET=''; C_BOLD=''; C_DIM=''; C_RED=''; C_GREEN=''; C_YELLOW=''
+  C_BLUE=''; C_CYAN=''; C_GREY=''
+  IS_TTY=0
+fi
 
-log()      { echo -e "${C_BLUE}[*]${C_RESET} $*"; }
-ok()       { term "  ${C_GREEN}✓${C_RESET} $*"; }
-warn()     { term "  ${C_YELLOW}!${C_RESET} $*"; }
-err()      { term "  ${C_RED}✗${C_RESET} $*"; }
-section()  { term "\n${C_BLUE}==>${C_RESET} \033[1m$*${C_RESET}"; }
+# ---------- output -----------------------------------------------------------------
+# term/ok/warn/err/info/section → visible on the terminal (fd 3)
+# log                            → module log file only
+term()    { printf '%s\n' "$*" >&3; }
+log()     { [ -n "${CURRENT_MODULE_LOG:-}" ] && printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; return 0; }
+ok()      { term "  ${C_GREEN}✓${C_RESET} $*"; log "OK   $*"; }
+warn()    { term "  ${C_YELLOW}!${C_RESET} $*"; log "WARN $*"; }
+err()     { term "  ${C_RED}✗${C_RESET} $*"; log "FAIL $*"; }
+info()    { term "    ${C_GREY}$*${C_RESET}"; log "INFO $*"; }
+section() { term ""; term "  ${C_BOLD}$*${C_RESET}"; log "== $*"; }
+skipped() { term "  ${C_GREEN}✓${C_RESET} $1 ${C_GREY}— ${2:-already installed}${C_RESET}"; log "SKIP $1 (${2:-already installed})"; }
 
-# ---------- distro detection ---------------------------------------------------
-# Sets PKG_FAMILY to "debian" or "rpm" (or "unknown"), and PKG_MANAGER to the
-# concrete binary to use (apt, dnf, yum).
-detect_distro() {
-  if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    DISTRO_ID="${ID:-unknown}"
-    DISTRO_ID_LIKE="${ID_LIKE:-}"
-  else
-    DISTRO_ID="unknown"
-    DISTRO_ID_LIKE=""
-  fi
-
-  if command -v apt-get >/dev/null 2>&1; then
-    PKG_FAMILY="debian"
-    PKG_MANAGER="apt-get"
-  elif command -v dnf >/dev/null 2>&1; then
-    PKG_FAMILY="rpm"
-    PKG_MANAGER="dnf"
-  elif command -v yum >/dev/null 2>&1; then
-    PKG_FAMILY="rpm"
-    PKG_MANAGER="yum"
-  else
-    PKG_FAMILY="unknown"
-    PKG_MANAGER=""
-  fi
-
-  export DISTRO_ID DISTRO_ID_LIKE PKG_FAMILY PKG_MANAGER
-  log "Detected distro: ${DISTRO_ID} (family: ${PKG_FAMILY}, manager: ${PKG_MANAGER})"
+_fmt_secs() {
+  local s=$1
+  if [ "$s" -ge 60 ]; then printf '%dm %02ds' $((s / 60)) $((s % 60)); else printf '%ds' "$s"; fi
 }
 
-# ---------- desktop environment detection --------------------------------------
-# Sets DESKTOP_ENV to "gnome", "kde", or "other". Modules that are
-# environment-specific (GNOME extensions, gnome-tweaks, Spectacle vs
-# Flameshot defaults, etc.) branch on this so the same toolkit works on both
-# Ubuntu (GNOME) and Fedora KDE Plasma without per-machine editing.
+# ---------- run ledger -------------------------------------------------------------
+# One TSV line per item: STATUS  KIND  MODULE  NAME  DETAIL
+#   STATUS: OK | SKIP | FAIL | NOTE      KIND: app | ext | cfg | step | next
+record() {
+  mkdir -p "$LOG_DIR"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "${CURRENT_MODULE:-manual}" "$3" "${4:-}" >> "$LEDGER"
+}
+# A line for the "Next steps" block of the final summary (deduplicated there).
+next_step() { record NOTE next "$1"; }
+
+# ---------- distro / desktop -----------------------------------------------------
+detect_distro() {
+  DISTRO_ID="unknown"; DISTRO_ID_LIKE=""; DISTRO_NAME="Linux"
+  if [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    DISTRO_ID="${ID:-unknown}"; DISTRO_ID_LIKE="${ID_LIKE:-}"
+    DISTRO_NAME="${PRETTY_NAME:-${NAME:-Linux}}"
+  fi
+  if command -v apt-get >/dev/null 2>&1; then
+    PKG_FAMILY="debian"; PKG_MANAGER="apt-get"
+  elif command -v dnf >/dev/null 2>&1; then
+    PKG_FAMILY="rpm"; PKG_MANAGER="dnf"
+  else
+    PKG_FAMILY="unknown"; PKG_MANAGER=""
+  fi
+  IS_FEDORA=0
+  if [ "$DISTRO_ID" = "fedora" ]; then IS_FEDORA=1
+  elif [ "$PKG_FAMILY" = "rpm" ]; then case "$DISTRO_ID_LIKE" in *fedora*) IS_FEDORA=1 ;; esac
+  fi
+  export DISTRO_ID DISTRO_ID_LIKE DISTRO_NAME PKG_FAMILY PKG_MANAGER IS_FEDORA
+}
+
 detect_desktop() {
-  local d="${XDG_CURRENT_DESKTOP:-}${DESKTOP_SESSION:-}"
-  # Lowercase for matching, tolerant of values like "ubuntu:GNOME" or
-  # "KDE" / "plasma" / "plasmawayland".
-  d="$(printf '%s' "$d" | tr '[:upper:]' '[:lower:]')"
+  local d
+  d="$(printf '%s' "${XDG_CURRENT_DESKTOP:-}${DESKTOP_SESSION:-}" | tr '[:upper:]' '[:lower:]')"
   case "$d" in
     *kde*|*plasma*) DESKTOP_ENV="kde" ;;
     *gnome*|*unity*) DESKTOP_ENV="gnome" ;;
     *)
-      # Fallback: sniff running processes if the env vars were empty (e.g.
-      # running over SSH without a session dbus).
-      if pgrep -x plasmashell >/dev/null 2>&1; then
-        DESKTOP_ENV="kde"
-      elif pgrep -x gnome-shell >/dev/null 2>&1; then
-        DESKTOP_ENV="gnome"
-      else
-        DESKTOP_ENV="other"
-      fi
-      ;;
+      if pgrep -x plasmashell >/dev/null 2>&1; then DESKTOP_ENV="kde"
+      elif pgrep -x gnome-shell >/dev/null 2>&1; then DESKTOP_ENV="gnome"
+      else DESKTOP_ENV="other"
+      fi ;;
   esac
   export DESKTOP_ENV
-  log "Detected desktop environment: ${DESKTOP_ENV}"
 }
 
-# ---------- "is X already there?" checks ---------------------------------------
-is_cmd()        { command -v "$1" >/dev/null 2>&1; }
-is_apt_pkg_installed() { dpkg -s "$1" >/dev/null 2>&1; }
-is_rpm_pkg_installed() { rpm -q "$1" >/dev/null 2>&1; }
+# Modules call this once at the top.
+module_init() {
+  detect_distro
+  detect_desktop
+  # shellcheck disable=SC1090
+  [ -f "$PREFS_FILE" ] && . "$PREFS_FILE"
+  log "distro=$DISTRO_ID family=$PKG_FAMILY desktop=$DESKTOP_ENV"
+}
+
+is_fedora_kde() { [ "$IS_FEDORA" -eq 1 ] && [ "$DESKTOP_ENV" = "kde" ]; }
+
+# ---------- presence checks ----------------------------------------------------------
+is_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 is_pkg_installed() {
-  local pkg="$1"
   case "$PKG_FAMILY" in
-    debian) is_apt_pkg_installed "$pkg" ;;
-    rpm)    is_rpm_pkg_installed "$pkg" ;;
+    debian) dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed" ;;
+    rpm)    rpm -q "$1" >/dev/null 2>&1 ;;
     *)      return 1 ;;
   esac
 }
 
 is_flatpak_installed() {
-  is_cmd flatpak && flatpak info "$1" >/dev/null 2>&1
+  is_cmd flatpak || return 1
+  flatpak info --system "$1" >/dev/null 2>&1 || flatpak info --user "$1" >/dev/null 2>&1
 }
 
-is_snap_installed() {
-  is_cmd snap && snap list 2>/dev/null | grep -q "^$1 "
+is_snap_installed() { is_cmd snap && snap list "$1" >/dev/null 2>&1; }
+
+# ---------- error excerpt + hint -------------------------------------------------------
+_strip() { sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' "$1" | tr '\r' '\n' | grep -vE '^[[:space:]]*$'; }
+
+# Up to 4 lines that actually explain the failure, not the last bit of noise.
+_error_excerpt() {
+  local cleaned hits
+  cleaned="$(_strip "$1")"
+  hits="$(printf '%s\n' "$cleaned" \
+    | grep -iE '(^E: |error|failed|fatal|not found|no match|nothing provides|cannot|unable to|denied|conflict|could not|timed out|404|refused|problem:)' \
+    | grep -viE '^[[:space:]]*(warning|w:)' | awk '!seen[$0]++' | tail -n 4)"
+  [ -z "$hits" ] && hits="$(printf '%s\n' "$cleaned" | tail -n 3)"
+  printf '%s\n' "$hits" | cut -c1-150
 }
 
-# ---------- ledgers for the final cross-module summary --------------------------
-# Each module runs as its own subprocess, so an in-memory array can't
-# accumulate "what got installed" across the whole run. Instead every
-# install helper appends one line to a small TSV ledger file; install.sh
-# reads it back at the very end to print one final report covering every
-# module, not just the one that happened to run last.
-LOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/logs"
-APPS_LEDGER="$LOG_DIR/_apps.tsv"
-EXT_LEDGER="$LOG_DIR/_extensions.tsv"
-
-_ledger_record() {
-  # _ledger_record <ledger-file> <STATUS> <name>
-  mkdir -p "$LOG_DIR"
-  printf '%s\t%s\n' "$2" "$3" >> "$1"
+# One plain-language guess at the cause.
+_error_hint() {
+  local text; text="$(_strip "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$text" in
+    *"could not resolve"*|*"temporary failure in name resolution"*|*"network is unreachable"*|*"timed out"*|*"curl: (6)"*|*"curl: (7)"*|*"curl: (28)"*)
+      echo "Network problem — check your internet connection and run the script again." ;;
+    *"a password is required"*|*"sudo: a terminal is required"*)
+      echo "The sudo session expired — run the script again." ;;
+    *"no match for argument"*|*"unable to locate package"*|*"nothing provides"*|*"no package"*available*)
+      echo "Package not found in the enabled repositories for this release." ;;
+    *"no remote refs found"*|*"nothing matches"*)
+      echo "This Flatpak ID isn't on Flathub (it may have been renamed)." ;;
+    *"could not get lock"*|*"waiting for process with pid"*|*"lock"*held*)
+      echo "Another package manager is running (Software / updates). Wait for it, then re-run." ;;
+    *"gpg"*|*"signature"*|*"nopubkey"*)
+      echo "Repository signing key problem — the vendor may have rotated its key." ;;
+    *"no space left"*)
+      echo "Out of disk space — free some space and re-run." ;;
+    *"404"*|*"not found (http"*)
+      echo "Download link returned 404 — the vendor moved the file." ;;
+    *) echo "" ;;
+  esac
 }
 
-# ---------- spinner-driven command runner ---------------------------------------
-# spin_run "Label" command args...
-# Runs a command in the background, shows a live spinner + label on the real
-# terminal while it runs, then replaces that line with a ✓ or ✗ result. Full
-# command output (stdout+stderr) is appended to the current module's log
-# file (env var CURRENT_MODULE_LOG, set by run_module) regardless of outcome
-# — on failure, the last non-empty line of that output is also shown inline
-# so an obvious error doesn't require opening the log.
-_SPIN_FRAMES='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+# ---------- spinner ----------------------------------------------------------------------
+# spin_run [-a] "Label" command args...
+#   -a  label is an app name: shows "Installing <Label>" while running and
+#       "<Label> — installed" when done.
+# Command output goes to the module log; stdin is closed so nothing can hang
+# waiting for input. On failure the excerpt + hint are printed and kept in
+# SPIN_REASON for the ledger.
+_SPIN_FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+SPIN_REASON=""
 
 spin_run() {
+  local app=0
+  [ "${1:-}" = "-a" ] && { app=1; shift; }
   local label="$1"; shift
-  local out; out="$(mktemp)"
+  local running="$label"; [ "$app" -eq 1 ] && running="Installing $label"
+  local out start pid rc i=0 elapsed
+  out="$(mktemp)"; start=$SECONDS
 
-  "$@" >"$out" 2>&1 &
-  local pid=$!
+  "$@" >"$out" 2>&1 </dev/null &
+  pid=$!
 
-  local i=0 frame
-  while kill -0 "$pid" 2>/dev/null; do
-    frame="${_SPIN_FRAMES:$((i % ${#_SPIN_FRAMES})):1}"
-    printf '\r  %s %s' "$frame" "$label" >&3
-    i=$((i + 1))
-    sleep 0.1
-  done
-  wait "$pid"
-  local status=$?
-
-  if [ -n "${CURRENT_MODULE_LOG:-}" ]; then
-    { echo "----- $label -----"; cat "$out"; echo; } >> "$CURRENT_MODULE_LOG"
+  if [ "$IS_TTY" -eq 1 ]; then
+    while kill -0 "$pid" 2>/dev/null; do
+      elapsed=$((SECONDS - start))
+      printf '\r\033[K  %s%s%s %s %s%s%s' "$C_CYAN" "${_SPIN_FRAMES[i % 10]}" "$C_RESET" \
+        "$running" "$C_GREY" "$( [ "$elapsed" -ge 2 ] && _fmt_secs "$elapsed")" "$C_RESET" >&3
+      i=$((i + 1))
+      sleep 0.1
+    done
   fi
+  wait "$pid"; rc=$?
+  elapsed=$((SECONDS - start))
 
-  if [ "$status" -eq 0 ]; then
-    printf '\r\033[K  %b✓%b %s\n' "$C_GREEN" "$C_RESET" "$label" >&3
+  { echo "----- $running  (exit $rc, $(_fmt_secs "$elapsed")) -----"; cat "$out"; echo; } >> "${CURRENT_MODULE_LOG:-/dev/null}"
+
+  [ "$IS_TTY" -eq 1 ] && printf '\r\033[K' >&3
+  local t=""; [ "$elapsed" -ge 2 ] && t=" ${C_GREY}($(_fmt_secs "$elapsed"))${C_RESET}"
+  if [ "$rc" -eq 0 ]; then
+    SPIN_REASON=""
+    if [ "$app" -eq 1 ]; then term "  ${C_GREEN}✓${C_RESET} $label ${C_GREY}— installed${C_RESET}$t"
+    else term "  ${C_GREEN}✓${C_RESET} $label$t"; fi
   else
-    printf '\r\033[K  %b✗%b %s\n' "$C_RED" "$C_RESET" "$label" >&3
-    local reason
-    reason="$(grep -vE '^\s*$' "$out" | tail -n 1 | cut -c1-140)"
-    [ -n "$reason" ] && printf '      %b%s%b\n' "$C_DIM" "$reason" "$C_RESET" >&3
+    local excerpt hint
+    excerpt="$(_error_excerpt "$out")"; hint="$(_error_hint "$out")"
+    SPIN_REASON="$(printf '%s\n' "$excerpt" | tail -n 1)"
+    if [ "$app" -eq 1 ]; then term "  ${C_RED}✗${C_RESET} $label ${C_RED}— failed to install${C_RESET}"
+    else term "  ${C_RED}✗${C_RESET} $label ${C_RED}— failed${C_RESET}"; fi
+    while IFS= read -r line; do term "      ${C_GREY}│${C_RESET} $line"; done <<< "$excerpt"
+    [ -n "$hint" ] && term "      ${C_YELLOW}→${C_RESET} $hint"
+    [ -n "${CURRENT_MODULE_LOG:-}" ] && term "      ${C_GREY}↳ full output: logs/$(basename "$CURRENT_MODULE_LOG")${C_RESET}"
   fi
-
   rm -f "$out"
-  return "$status"
+  return "$rc"
 }
 
-# ---------- generic package install (skips if already present) ----------------
-# Usage: pkg_install <apt-name> <rpm-name>
-# If only one name is given it is used for both families.
-pkg_install() {
-  local apt_name="$1"
-  local rpm_name="${2:-$1}"
-  local name
-
+# ---------- package manager plumbing --------------------------------------------------
+_pm_install() {   # raw install, used inside spin_run
   case "$PKG_FAMILY" in
-    debian) name="$apt_name" ;;
-    rpm)    name="$rpm_name" ;;
-    *) err "$apt_name — unknown package family, cannot install"; _ledger_record "$APPS_LEDGER" FAIL "$apt_name"; return 1 ;;
+    debian) sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confold "$@" ;;
+    rpm)    sudo dnf install -y "$@" ;;
   esac
+}
 
+# Refresh package metadata at most once per run (a marker file is shared by
+# all modules; install.sh clears it at the start of every run).
+REFRESH_MARKER="$LOG_DIR/_refreshed"
+pm_refresh() {
+  [ -f "$REFRESH_MARKER" ] && return 0
+  case "$PKG_FAMILY" in
+    debian) spin_run "Refreshing package lists" sudo apt-get update ;;
+    rpm)    spin_run "Refreshing package metadata" sudo dnf makecache ;;
+  esac
+  mkdir -p "$LOG_DIR"; touch "$REFRESH_MARKER"
+}
+
+# Force the next pm_refresh to run (after adding a repository).
+pm_refresh_needed() { rm -f "$REFRESH_MARKER"; }
+
+# ---------- installers -------------------------------------------------------------------
+# pkg "Label" <deb-package> [rpm-package]
+#   Use "-" for a family where the package isn't available.
+#   The rpm name defaults to the deb name.
+pkg() {
+  local label="$1" deb="$2" rpmn="${3:-$2}" name
+  case "$PKG_FAMILY" in debian) name="$deb" ;; rpm) name="$rpmn" ;; *) name="-" ;; esac
+  if [ "$name" = "-" ]; then
+    skipped "$label" "not available on this distro"
+    return 0
+  fi
   if is_pkg_installed "$name"; then
-    ok "$name (already installed)"
-    _ledger_record "$APPS_LEDGER" SKIP "$name"
-    return 0
+    skipped "$label"; record SKIP app "$label"; return 0
   fi
-
-  case "$PKG_FAMILY" in
-    debian) spin_run "$name" sudo apt-get install -y "$name" ;;
-    rpm)    spin_run "$name" sudo "$PKG_MANAGER" install -y "$name" ;;
-  esac
-  local status=$?
-  _ledger_record "$APPS_LEDGER" "$([ $status -eq 0 ] && echo OK || echo FAIL)" "$name"
-  return $status
+  if spin_run -a "$label" _pm_install "$name"; then
+    record OK app "$label"; return 0
+  fi
+  record FAIL app "$label" "$SPIN_REASON"; return 1
 }
 
-# Install a batch of packages in one call (space separated single name that
-# is identical on both families).
-pkg_install_many() {
-  local pkg
-  for pkg in "$@"; do
-    pkg_install "$pkg"
+# Install several packages under a single label (e.g. a build toolchain).
+pkg_group() {
+  local label="$1"; shift
+  local missing=() p
+  for p in "$@"; do is_pkg_installed "$p" || missing+=("$p"); done
+  if [ "${#missing[@]}" -eq 0 ]; then skipped "$label"; record SKIP app "$label"; return 0; fi
+  if spin_run -a "$label" _pm_install "${missing[@]}"; then record OK app "$label"; return 0; fi
+  record FAIL app "$label" "$SPIN_REASON"; return 1
+}
+
+ensure_flathub() {
+  [ -n "${FLATHUB_READY:-}" ] && return 0
+  if ! is_cmd flatpak; then pkg "Flatpak" flatpak flatpak || return 1; fi
+  if ! flatpak remotes --system 2>/dev/null | grep -q '^flathub'; then
+    spin_run "Adding Flathub" sudo flatpak remote-add --if-not-exists flathub \
+      https://dl.flathub.org/repo/flathub.flatpakrepo || return 1
+  fi
+  # Fedora ships Flathub as a filtered remote on some installs; make it complete.
+  sudo flatpak remote-modify --system --no-filter --enable flathub >/dev/null 2>&1 || true
+  export FLATHUB_READY=1
+}
+
+# flatpak_app "Label" <app-id> [native-command ...]
+#   Skips when the Flatpak OR any listed native command is already present,
+#   so an app installed from the distro repos is never duplicated.
+flatpak_app() {
+  local label="$1" id="$2"; shift 2
+  local c
+  if is_flatpak_installed "$id"; then skipped "$label"; record SKIP app "$label"; return 0; fi
+  for c in "$@"; do
+    if is_cmd "$c"; then skipped "$label" "already installed (native package)"; record SKIP app "$label"; return 0; fi
   done
-}
-
-apt_update_once() {
-  if [ "$PKG_FAMILY" = "debian" ] && [ -z "${APT_UPDATED:-}" ]; then
-    spin_run "Refreshing package lists" sudo apt-get update -y
-    export APT_UPDATED=1
+  ensure_flathub || { record FAIL app "$label" "Flathub unavailable"; return 1; }
+  if spin_run -a "$label" sudo flatpak install -y --noninteractive --system flathub "$id"; then
+    record OK app "$label"; return 0
   fi
+  record FAIL app "$label" "$SPIN_REASON"; return 1
 }
 
-rpm_refresh_once() {
-  if [ "$PKG_FAMILY" = "rpm" ] && [ -z "${RPM_REFRESHED:-}" ]; then
-    spin_run "Refreshing package metadata" sudo "$PKG_MANAGER" makecache -y
-    export RPM_REFRESHED=1
+_download() { curl -fsSL --retry 3 --connect-timeout 15 "$1" -o "$2"; }
+
+# url_package "Label" <url>   — download a .deb/.rpm and install it locally.
+url_package() {
+  local label="$1" url="$2" ext tmp
+  case "$PKG_FAMILY" in debian) ext=deb ;; rpm) ext=rpm ;; *) return 1 ;; esac
+  tmp="$(mktemp --suffix=".$ext")"
+  if ! spin_run "Downloading $label" _download "$url" "$tmp"; then
+    rm -f "$tmp"; record FAIL app "$label" "$SPIN_REASON"; return 1
   fi
+  chmod 644 "$tmp"
+  if spin_run -a "$label" _pm_install "$tmp"; then
+    rm -f "$tmp"; record OK app "$label"; return 0
+  fi
+  rm -f "$tmp"; record FAIL app "$label" "$SPIN_REASON"; return 1
 }
 
-# ---------- RPM Fusion (Fedora only) -------------------------------------------
-# Fedora deliberately ships without proprietary/patent-encumbered packages —
-# NVIDIA drivers, the full ffmpeg build, many codecs, and some apps live in
-# the RPM Fusion free + nonfree repos instead. Several modules (GPU drivers,
-# media players) can't work until these are enabled, so this is the Fedora
-# analogue of "enable universe + add the PPAs" on the Ubuntu side. No-op on
-# non-Fedora / non-RPM systems, and skipped once already enabled.
+# ---------- Fedora: RPM Fusion ----------------------------------------------------------
 ensure_rpmfusion() {
-  # Only applies to Fedora (and close Fedora derivatives). No-op everywhere else.
-  local is_fedora=0
-  if [ "${DISTRO_ID:-}" = "fedora" ]; then
-    is_fedora=1
-  elif [ "${PKG_FAMILY:-}" = "rpm" ]; then
-    case "${DISTRO_ID_LIKE:-}" in *fedora*) is_fedora=1 ;; esac
+  [ "$IS_FEDORA" -eq 1 ] || return 0
+  if rpm -q rpmfusion-free-release rpmfusion-nonfree-release >/dev/null 2>&1; then
+    skipped "RPM Fusion repositories" "already enabled"; return 0
   fi
-  [ "$is_fedora" -eq 1 ] || return 0
-
-  if rpm -q rpmfusion-free-release >/dev/null 2>&1 && rpm -q rpmfusion-nonfree-release >/dev/null 2>&1; then
-    ok "RPM Fusion (free + nonfree) already enabled"
-    return 0
-  fi
-
-  local ver
-  ver="$(rpm -E %fedora)"
-  spin_run "RPM Fusion free repo" sudo "$PKG_MANAGER" install -y \
-    "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${ver}.noarch.rpm"
-  spin_run "RPM Fusion nonfree repo" sudo "$PKG_MANAGER" install -y \
-    "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${ver}.noarch.rpm"
-  export RPM_REFRESHED=""   # force a metadata refresh now the new repos exist
-  rpm_refresh_once
-}
-
-# ---------- flatpak helper -----------------------------------------------------
-ensure_flatpak() {
-  if ! is_cmd flatpak; then
-    pkg_install flatpak flatpak
-  fi
-  if ! flatpak remote-list 2>/dev/null | grep -q flathub; then
-    spin_run "Adding Flathub remote" sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+  local ver; ver="$(rpm -E %fedora)"
+  if spin_run "Enabling RPM Fusion (free + nonfree)" sudo dnf install -y \
+      "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${ver}.noarch.rpm" \
+      "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${ver}.noarch.rpm"; then
+    record OK step "RPM Fusion repositories"
+    pm_refresh_needed; pm_refresh
+  else
+    record FAIL step "RPM Fusion repositories" "$SPIN_REASON"; return 1
   fi
 }
 
-flatpak_install() {
-  local app_id="$1"
-  ensure_flatpak
-  if is_flatpak_installed "$app_id"; then
-    ok "$app_id (already installed)"
-    _ledger_record "$APPS_LEDGER" SKIP "$app_id (flatpak)"
-    return 0
-  fi
-  spin_run "$app_id (flatpak)" sudo flatpak install -y flathub "$app_id"
-  local status=$?
-  _ledger_record "$APPS_LEDGER" "$([ $status -eq 0 ] && echo OK || echo FAIL)" "$app_id (flatpak)"
-  return $status
-}
+# ---------- module discovery -------------------------------------------------------------
+# Each module declares two header lines:
+#   # Title:    Short name shown in headers and --list
+#   # Installs: What it installs or configures (one line)
+module_field() { sed -n "s/^# $2:[[:space:]]*//p" "$1" | head -n 1; }
 
-# ---------- .deb / external-repo download helper -------------------------------
-download_and_install_deb() {
-  local url="$1" tmp label
-  tmp="$(mktemp --suffix=.deb)"
-  label="$(basename "$url")"
-  spin_run "Downloading $label" curl -fsSL "$url" -o "$tmp"
-  if [ $? -ne 0 ]; then
-    rm -f "$tmp"
-    _ledger_record "$APPS_LEDGER" FAIL "$label (download)"
-    return 1
-  fi
-  spin_run "Installing $label" sudo apt-get install -y "$tmp"
-  local status=$?
-  rm -f "$tmp"
-  _ledger_record "$APPS_LEDGER" "$([ $status -eq 0 ] && echo OK || echo FAIL)" "$label"
-  return $status
-}
-
-# ---------- module runner ------------------------------------------------------
-# Runs a module script, records pass/fail into arrays install.sh reports on.
-#
-# QUIET BY DEFAULT: each module's full output (package manager chatter,
-# flatpak "Looking for matches", curl progress, etc.) is captured into its
-# own log file under logs/, NOT printed to the terminal. Section headers and
-# per-item ✓/✗ lines (via section()/spin_run()) still reach the terminal
-# through fd 3 regardless. On module failure, the last ~25 lines of its log
-# are also printed automatically.
-#
-# Modules that need to prompt the user interactively (read -p, or a
-# third-party interactive installer like SpotX) are listed in
-# INTERACTIVE_MODULES and run with output attached directly to the terminal
-# instead, since redirecting their output would hide the prompts themselves.
-INTERACTIVE_MODULES=("15-spotify-spotx")
-
-declare -a MODULES_OK=()
-declare -a MODULES_FAILED=()
-declare -a MODULES_SKIPPED=()
-
-_is_interactive_module() {
-  local name="$1" m
-  for m in "${INTERACTIVE_MODULES[@]}"; do
-    [ "$m" = "$name" ] && return 0
-  done
-  return 1
-}
+# ---------- module runner ----------------------------------------------------------------
+declare -a MODULES_OK=() MODULES_FAILED=()
 
 run_module() {
-  local module_path="$1"
-  local module_name
-  module_name="$(basename "$module_path" .sh)"
+  local path="$1" idx="$2" total="$3" name title log_file
+  shift 3   # anything left is passed through to the module
+  name="$(basename "$path" .sh)"
+  title="$(module_field "$path" Title)"; title="${title:-$name}"
+  term ""
+  term "${C_BLUE}${C_BOLD}[$(printf '%2d' "$idx")/${total}]${C_RESET} ${C_BOLD}${title}${C_RESET}"
 
-  section "$module_name"
-  if [ ! -f "$module_path" ]; then
-    warn "Module not found: $module_path — skipping"
-    MODULES_SKIPPED+=("$module_name")
-    return
-  fi
-
-  if _is_interactive_module "$module_name"; then
-    if bash "$module_path"; then
-      MODULES_OK+=("$module_name")
-    else
-      err "$module_name FAILED"
-      MODULES_FAILED+=("$module_name")
-    fi
-    return
+  if [ ! -f "$path" ]; then
+    warn "Module file not found: $path"; MODULES_FAILED+=("$name"); return
   fi
 
   mkdir -p "$LOG_DIR"
-  local log_file="$LOG_DIR/${module_name}.log"
+  log_file="$LOG_DIR/${name}.log"
   : > "$log_file"
 
-  if CURRENT_MODULE_LOG="$log_file" bash "$module_path" >"$log_file" 2>&1; then
-    MODULES_OK+=("$module_name")
+  local before after
+  before="$(grep -c "^FAIL" "$LEDGER" 2>/dev/null || true)"
+  if CURRENT_MODULE="$name" CURRENT_MODULE_LOG="$log_file" bash "$path" "$@" >>"$log_file" 2>&1; then
+    MODULES_OK+=("$name")
   else
-    err "$module_name FAILED — last 25 lines of logs/${module_name}.log:"
-    term "----------------------------------------------------------------"
-    tail -n 25 "$log_file" | sed 's/^/    /' >&3
-    term "----------------------------------------------------------------"
-    MODULES_FAILED+=("$module_name")
+    after="$(grep -c "^FAIL" "$LEDGER" 2>/dev/null || true)"
+    # Only dump the log tail if no individual item already explained the failure.
+    if [ "${after:-0}" = "${before:-0}" ]; then
+      err "$title stopped unexpectedly"
+      while IFS= read -r line; do term "      ${C_GREY}│${C_RESET} $line"; done < <(_error_excerpt "$log_file")
+      term "      ${C_GREY}↳ full output: logs/${name}.log${C_RESET}"
+      CURRENT_MODULE="$name" record FAIL step "$title" "module exited with an error"
+    fi
+    MODULES_FAILED+=("$name")
   fi
 }
 
-# ---------- final report ---------------------------------------------------------
-# Reads the app/extension ledgers written by every module that ran and
-# prints one consolidated report: what installed, what was already there,
-# what failed, and what extensions ended up installed — plus the standing
-# reminders (reboot / re-login) relevant to whatever actually ran.
+# ---------- final summary ----------------------------------------------------------------
+_wrap_list() {   # comma-join names and wrap at the terminal width
+  local width=${COLUMNS:-100}; [ "$width" -gt 110 ] && width=110
+  paste -sd ',' - | sed 's/,/, /g' | fold -s -w $((width - 8)) | sed 's/^/      /'
+}
+
 print_summary() {
-  section "Summary"
+  local elapsed="$1"
+  local bar="────────────────────────────────────────────────────────────"
+  term ""
+  term "${C_BLUE}${bar}${C_RESET}"
+  term "  ${C_BOLD}Summary${C_RESET}  ${C_GREY}${DISTRO_NAME} · ${DESKTOP_ENV} · finished in $(_fmt_secs "$elapsed")${C_RESET}"
+  term "${C_BLUE}${bar}${C_RESET}"
 
-  echo -e "${C_GREEN}Modules completed:${C_RESET} ${MODULES_OK[*]:-none}" >&3
-  [ "${#MODULES_SKIPPED[@]}" -gt 0 ] && echo -e "${C_YELLOW}Modules skipped:${C_RESET}   ${MODULES_SKIPPED[*]}" >&3
-  [ "${#MODULES_FAILED[@]}" -gt 0 ] && echo -e "${C_RED}Modules failed:${C_RESET}    ${MODULES_FAILED[*]}" >&3
+  [ -f "$LEDGER" ] || { term "  Nothing was recorded."; return; }
 
-  if [ -f "$APPS_LEDGER" ]; then
-    local installed skipped failed
-    installed="$(awk -F'\t' '$1=="OK"{print "  - "$2}' "$APPS_LEDGER")"
-    skipped="$(awk -F'\t' '$1=="SKIP"{print "  - "$2}' "$APPS_LEDGER")"
-    failed="$(awk -F'\t' '$1=="FAIL"{print "  - "$2}' "$APPS_LEDGER")"
+  _block() {   # _block <colour> <heading> <awk filter>
+    local items count
+    items="$(awk -F'\t' "$3"' {print $4}' "$LEDGER" | awk '!seen[$0]++')"
+    [ -z "$items" ] && return
+    count="$(printf '%s\n' "$items" | wc -l)"
+    term ""
+    term "  $1$2 ($count)${C_RESET}"
+    printf '%s\n' "$items" | _wrap_list >&3
+  }
 
-    [ -n "$installed" ] && { term "\n${C_GREEN}Newly installed:${C_RESET}"; term "$installed"; }
-    [ -n "$skipped" ]   && { term "\n${C_DIM}Already present (skipped):${C_RESET}"; term "$skipped"; }
-    [ -n "$failed" ]    && { term "\n${C_RED}Failed to install:${C_RESET}"; term "$failed"; }
-  fi
+  _block "$C_GREEN" "Installed"          '$1=="OK"   && $2=="app"'
+  _block "$C_GREY"  "Already installed"  '$1=="SKIP" && $2=="app"'
+  _block "$C_GREEN" "GNOME extensions"   '($1=="OK" || $1=="SKIP") && $2=="ext"'
+  _block "$C_GREEN" "Configured"         '$1=="OK"   && ($2=="cfg" || $2=="step")'
 
-  if [ -f "$EXT_LEDGER" ]; then
-    local ext_installed ext_failed
-    ext_installed="$(awk -F'\t' '$1=="OK" || $1=="SKIP"{print "  - "$2}' "$EXT_LEDGER")"
-    ext_failed="$(awk -F'\t' '$1=="FAIL"{print "  - "$2}' "$EXT_LEDGER")"
-    [ -n "$ext_installed" ] && { term "\n${C_GREEN}GNOME extensions installed:${C_RESET}"; term "$ext_installed"; }
-    [ -n "$ext_failed" ]    && { term "\n${C_RED}GNOME extensions failed:${C_RESET}"; term "$ext_failed"; }
-  fi
-
-  [ "${#MODULES_FAILED[@]}" -gt 0 ] && term "\nFull logs for failed modules are in: ${LOG_DIR}/"
-
-  term "\n${C_YELLOW}Next steps:${C_RESET}"
-  if [ "${DESKTOP_ENV:-}" = "kde" ]; then
-    term "  - Log out and back in (or reboot) — needed for the i2c group change"
-    term "    (monitor brightness), the input method (Bangla typing), and the"
-    term "    NVIDIA driver (if installed) to take effect."
-    term "  - On Fedora with an NVIDIA card, wait for akmod to finish building the"
-    term "    module BEFORE rebooting (see the GPU module's note)."
-    term "  - Add any Plasma widgets you want via right-click panel > Add Widgets."
+  local failures
+  failures="$(awk -F'\t' '$1=="FAIL"' "$LEDGER")"
+  if [ -n "$failures" ]; then
+    term ""
+    term "  ${C_RED}Failed ($(printf '%s\n' "$failures" | wc -l))${C_RESET}"
+    while IFS=$'\t' read -r _ _ mod item reason; do
+      term "    ${C_RED}✗${C_RESET} $item${reason:+ ${C_GREY}— $reason${C_RESET}}"
+      term "      ${C_GREY}↳ logs/${mod}.log${C_RESET}"
+    done <<< "$failures"
+    term ""
+    term "  ${C_GREY}Fix the cause and run ./install.sh again — finished items are skipped.${C_RESET}"
   else
-    term "  - Log out and back in (or reboot) — needed for GNOME extensions to fully"
-    term "    load, the i2c group change (monitor brightness) to apply, and the"
-    term "    NVIDIA driver (if installed) to take effect."
-    term "  - Open Extension Manager afterward to confirm/configure extensions."
+    term ""
+    term "  ${C_GREEN}Nothing failed.${C_RESET}"
   fi
-  term "  - Sign into Brave/Chrome, TeamViewer, Discord, Spotify, Thunderbird etc."
-  term "    manually — none of that is scriptable without your credentials."
+
+  local steps
+  steps="$(awk -F'\t' '$1=="NOTE" && $2=="next" {print $4}' "$LEDGER" | awk '!seen[$0]++')"
+  if [ -n "$steps" ]; then
+    term ""
+    term "  ${C_YELLOW}Next steps${C_RESET}"
+    local n=1
+    while IFS= read -r s; do term "    $n. $s"; n=$((n + 1)); done <<< "$steps"
+  fi
+  term ""
 }

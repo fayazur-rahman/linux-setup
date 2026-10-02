@@ -1,301 +1,219 @@
-# linux-setup — portable post-install toolkit
+# linux-setup
 
-A decentralized, idempotent setup script for fresh Debian/Ubuntu (apt) or
-Fedora (dnf) installs, on either GNOME or KDE Plasma. It auto-detects both the
-package family *and* the desktop environment and adapts each module
-accordingly, so the same toolkit runs unchanged on Ubuntu GNOME and Fedora
-KDE Plasma. It skips anything already installed, so it's safe to re-run.
+One command to turn a fresh Fedora or Ubuntu/Debian install into a ready-to-use
+desktop: apps, codecs, GNOME extensions, Firefox profiles, a better terminal
+prompt and login-time apps. Every step checks first and skips anything that is
+already in place, so it is safe to run again at any time.
 
-## Distro + desktop support
+## Supported systems
 
-| | Ubuntu / Debian (apt) | Fedora (dnf) |
+| | GNOME | KDE Plasma |
 |---|---|---|
-| **GNOME** | fully supported | fully supported |
-| **KDE Plasma** | supported* | fully supported |
+| **Fedora** (dnf) | Main target, fully supported | Supported; skips what Plasma already ships |
+| **Ubuntu / Debian** (apt) | Supported | Supported |
 
-Detection is automatic (`detect_distro` + `detect_desktop` in
-`lib/common.sh`). On Fedora, the toolkit also enables **RPM Fusion**
-(free + nonfree) and the multimedia codec group up front, since NVIDIA
-drivers, the full ffmpeg build, and VLC codecs live there. GNOME-only pieces
-(GNOME Tweaks, GNOME Shell extensions) are skipped cleanly on KDE, where
-Plasma's built-in equivalents cover the same ground.
+The distro, package manager and desktop are detected automatically; no
+editing is needed between machines.
 
-\* On KDE the GNOME-extensions module is skipped and the screenshot/brightness
-modules defer to Plasma's native tools (Spectacle, the built-in brightness
-applet) — see the per-module notes below.
+## Quick start
 
-## Structure
+```bash
+git clone <this repository> linux-setup   # or unzip the download
+cd linux-setup
+chmod +x install.sh
+./install.sh
+```
+
+Run it as your normal user, not with `sudo`. It asks for your password once
+and keeps the session alive for the whole run.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `./install.sh` | Runs every module in `config/modules.conf` |
+| `./install.sh 05 15` | Runs only the listed modules (numbers or names, e.g. `./install.sh media spotify`) |
+| `./install.sh --list` | Shows what each module installs. Installs nothing |
+| `./install.sh --terminal` | Configures only the terminal prompt. No sudo, no packages, nothing else touched |
+| `./install.sh --terminal-reset` | Removes the terminal configuration again |
+| `./install.sh --help` | Shows the usage summary |
+
+## Questions at the start
+
+Anything the run needs to know is asked before the first install, so it never
+stops halfway waiting for input:
+
+- **Spotify account: free or premium.** SpotX applies different patches for
+  each (`-p` for premium accounts).
+- **How many Firefox profiles** (press Enter for the default of 3).
+
+Questions only appear when the matching module is part of the run.
+
+## What gets installed
+
+| # | Module | Contents |
+|---|---|---|
+| 00 | Base system | System update; on Fedora: RPM Fusion, full ffmpeg and multimedia codecs; Flathub |
+| 01 | Command-line tools | Vim, curl, wget, build tools, ffmpeg, GParted, unrar, 7-Zip, archive manager |
+| 02 | Desktop tools | GNOME Tweaks and Extension Manager (GNOME only), Mission Center |
+| 03 | Browsers | Firefox (set as the default browser), Google Chrome |
+| 04 | Firefox profiles | Separate profiles (Personal, Work, …), each with its own launcher, pinned to the dock |
+| 05 | Media | VLC, mpv, SMPlayer, HandBrake, GIMP, OBS Studio |
+| 06 | Office & writing | LibreOffice Writer/Calc/Impress, Apostrophe, Mail Viewer |
+| 07 | Internet | qBittorrent, FileZilla, Cloudflare WARP |
+| 08 | Communication | Discord, ZapZap (WhatsApp) |
+| 09 | Remote access | AnyDesk, Remmina |
+| 10 | Development | Visual Studio Code |
+| 11 | Bangla typing | OpenBangla Keyboard (Avro Phonetic layout) |
+| 12 | Screenshots | Flameshot, bound to the Print Screen key |
+| 13 | Monitor brightness | ddcutil and i2c access for external monitors |
+| 14 | GNOME extensions | See below, plus your saved ArcMenu layout |
+| 15 | Spotify | Spotify with SpotX ad-blocking patches |
+| 16 | Terminal | Two-line prompt, see below |
+| 17 | Startup apps | ZapZap, Discord, Flameshot, qBittorrent, Remmina and Spotify start at login (those that are installed) |
+
+Apps come from the distribution's repositories, the vendor's own repository
+(Chrome, VS Code, AnyDesk, Cloudflare WARP, Spotify on Ubuntu) or Flathub.
+An app is never installed twice: a Flatpak is skipped when the same app is
+already installed as a native package, and the other way round.
+
+### GNOME extensions
+
+AppIndicator and KStatusNotifierItem Support, ArcMenu, Blur my Shell, Caffeine,
+Clipboard Indicator, Control monitor brightness and volume with ddcutil, Dash
+to Dock, Just Perfection, Media Controls, Show Desktop Applet.
+
+They are installed from extensions.gnome.org in the version that matches the
+running GNOME Shell, and enabled. Extensions that clash with them (Dash to
+Panel, Ubuntu Dock, Ubuntu AppIndicators) are switched off. GNOME on Wayland
+only loads new extensions after you log out and back in.
+
+**ArcMenu layout.** `config/arcmenu.dconf` holds an exported ArcMenu
+configuration. It is applied when ArcMenu has no settings yet (a fresh
+install); an existing ArcMenu setup is left alone. To save your current layout
+into the repository:
+
+```bash
+dconf dump /org/gnome/shell/extensions/arcmenu/ > config/arcmenu.dconf
+```
+
+### Terminal prompt
+
+```
+fayazur@fedora ~/projects  main*
+$ asdf
+bash: asdf: command not found...
+fayazur@fedora ~/projects  ✗ 127
+$
+```
+
+- `user@host` and the current folder on the first line, the `$` on its own line
+- `$` is green, and turns **red** after a command fails or isn't found, with
+  the exit code shown on the line above (Ctrl+C doesn't count as a failure)
+- The git branch when inside a repository, with `*` for uncommitted changes
+- `took 12s` after any command that ran for 5 seconds or more
+- The active Python virtualenv
+- Larger, de-duplicated, timestamped history shared between open terminals
+- Aliases: `ll`, `la`, `..`, `...`, plus `mkcd <dir>` (create and enter)
+
+The settings live in `config/terminal.bash`, are copied to
+`~/.config/linux-setup/terminal.bash` and loaded by a three-line block in
+`~/.bashrc` (a backup is saved as `~/.bashrc.linux-setup.bak`). Edit
+`config/terminal.bash` and run `./install.sh --terminal` to apply changes.
+
+## Fedora and KDE notes
+
+- **Fedora** gets RPM Fusion (free and nonfree), the full ffmpeg build and the
+  multimedia codec group before anything else, since several apps depend on them.
+- **Spotify** is the Flathub build on Fedora; SpotX is pointed at its install
+  folder. A Flatpak update replaces the patched files, so run
+  `./install.sh 15` again after Spotify updates.
+- **Fedora KDE Plasma** skips Flameshot (Spectacle is built in), Remmina (KRDC is
+  built in) and the GNOME extensions; LibreOffice is already present and is
+  detected as such. OpenBangla Keyboard uses the Fcitx5 backend on KDE and iBus
+  on GNOME.
+- **Ubuntu** replaces the Snap build of Spotify with the apt one, because SpotX
+  can't patch Snap packages.
+
+## Output and logs
+
+Each item shows a spinner with elapsed time while it runs, then a single line:
+
+```
+[ 5/18] Media
+  ✓ VLC — already installed
+  ✓ HandBrake — installed (34s)
+  ✗ SMPlayer — failed to install
+      │ No match for argument: smplayer
+      → Package not found in the enabled repositories for this release.
+      ↳ full output: logs/05-media.log
+```
+
+When something fails you get the lines from the output that explain it, a
+plain-language guess at the cause (network, missing package, expired sudo,
+signing key, package manager busy, disk full) and the log file with the full
+output. Raw package-manager output never reaches the screen; every module
+writes its complete output to `logs/<module>.log`.
+
+The run ends with a summary: what was installed, what was already there, what
+was configured, which extensions are active, what failed and why, and the next
+steps for this run (for example logging out so new extensions load).
+
+## Customising
+
+- **Skip a module permanently:** put `#` in front of it in `config/modules.conf`.
+- **Change what a module installs:** each file in `modules/` is short and reads
+  top to bottom. The helpers it uses:
+  - `pkg "Label" <deb-name> [rpm-name]` — native package; use `-` where it doesn't exist
+  - `pkg_group "Label" <pkg> <pkg> …` — several packages under one name
+  - `flatpak_app "Label" <flathub-id> [native-command …]` — Flathub app, skipped if the native command exists
+  - `url_package "Label" <url>` — download and install a .deb/.rpm
+- **Add a module:** create `modules/NN-name.sh` with this header and add it to
+  `config/modules.conf`:
+
+  ```bash
+  #!/usr/bin/env bash
+  # Title:    My tools
+  # Installs: What it installs, shown by --list
+  source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+  module_init
+
+  pkg "tree" tree
+  flatpak_app "Inkscape" org.inkscape.Inkscape inkscape
+  ```
+
+## After the run
+
+1. Log out and back in. Needed for new GNOME extensions, the i2c group
+   (monitor brightness) and the Bangla input method.
+2. Add OpenBangla Keyboard as an input source:
+   Settings › Keyboard › Input Sources › + › Bangla.
+3. Connect Cloudflare WARP once: `warp-cli registration new && warp-cli connect`.
+4. Sign in to Chrome, Firefox profiles, Discord, Spotify, ZapZap, AnyDesk and the rest.
+
+The summary at the end of each run lists the steps that apply to that run.
+
+## Project layout
 
 ```
 linux-setup/
-├── install.sh              # master orchestrator — run this
-├── lib/
-│   └── common.sh            # shared helpers: distro detection, pkg_install,
-│                             # flatpak_install, logging, module runner
-├── modules/                 # one file per software group, all independent
-│   ├── 00-system-update.sh
-│   ├── 01-cli-essentials.sh
-│   ├── 02-gpu-drivers.sh
-│   ├── 03-browsers.sh
-│   ├── 04-download-managers.sh
-│   ├── 05-media-players.sh
-│   ├── 06-remote-access.sh
-│   ├── 07-dev-tools.sh
-│   ├── 08-office-suite.sh
-│   ├── 09-obs-discord.sh
-│   ├── 10-bangla-typing.sh
-│   ├── 11-screenshot-tool.sh
-│   ├── 12-monitor-brightness.sh
-│   ├── 13-gnome-extensions.sh
-│   ├── 14-whatsapp.sh
-│   ├── 15-spotify-spotx.sh
-│   └── 16-startup-apps.sh
+├── install.sh              entry point: options, questions, runs modules, summary
+├── lib/common.sh           detection, installers, spinner, error hints, summary
+├── modules/                one file per area, run in the order of modules.conf
 ├── config/
-│   └── modules.conf          # which modules run, and in what order
-├── logs/                     # per-module logs, created on first run
-└── INSTALLED-APPS.md         # full list of what gets installed and why
+│   ├── modules.conf        module list and order
+│   ├── arcmenu.dconf       saved ArcMenu layout
+│   └── terminal.bash       prompt and shell settings
+└── logs/                   created on each run, one log per module
 ```
 
-## Usage
+## Troubleshooting
 
-```bash
-chmod +x install.sh
-./install.sh                  # run everything in config/modules.conf
-./install.sh 03 09            # run only modules starting with 03 and 09
-./install.sh --list           # show the module list without running anything
-```
-
-Run as your normal user, **not** as root — it calls `sudo` internally only
-where needed, and primes the sudo session once at the start so you're not
-repeatedly prompted for a password mid-run.
-
-## Upfront prompt: Spotify tier
-
-At the very start of a run, `install.sh` asks one question — **Free or
-Premium** — and writes the answer to `logs/_prefs.env`. The Spotify module
-reads that later and passes `--premium` to SpotX when appropriate (per
-SpotX-Bash docs: free-tier patches are the default; paid-Premium users need
-`-p`/`--premium`, otherwise playback behaves oddly). No other prompt
-interrupts the run once it starts.
-
-WhatsApp (ZapZap) used to ask a y/N question — it's now installed
-unconditionally.
-
-## Output — clean, per-item status with a live spinner
-
-Section headers and a live spinner appear for every package/extension being
-worked on; when it finishes you get a single ✓ or ✗ line — never the raw
-apt/dnf/flatpak/curl output itself. That noisy detail is still captured, just
-into `logs/<module-name>.log` instead of your screen:
-
-```
-==> 03-browsers
-  ⠹ brave-browser
-  ✓ brave-browser
-  ✓ google-chrome-stable (already installed)
-
-==> 07-dev-tools
-  ✓ code
-  ⠴ cloudflare-warp
-  ✗ cloudflare-warp
-      E: Unable to locate package cloudflare-warp
-```
-
-If something fails, the last real line of its actual output is shown right
-under the ✗ — enough to tell what went wrong without opening a log file, but
-without flooding the screen with the full apt transcript either. The full
-transcript for every package attempted (success or failure) still lives in
-that module's log file for whenever you want to dig further.
-
-At the very end, `install.sh` prints one consolidated report covering the
-whole run: which modules completed, every package newly installed vs.
-already present vs. failed, every GNOME extension installed, and the
-standing next-steps (log out/reboot for extensions, i2c group, NVIDIA driver
-to take effect).
-
-Two modules need to prompt you interactively (a WhatsApp-wrapper yes/no, and
-SpotX's own setup wizard) — `14-whatsapp.sh` and `15-spotify-spotx.sh` run
-fully attached to the terminal instead, since redirecting them would hide
-the prompts you need to answer.
-
-See `INSTALLED-APPS.md` for a full list of what each module installs and why.
-
-## Editing what gets installed
-
-- To permanently skip a module on future runs, comment it out (`#`) in
-  `config/modules.conf`.
-- To change *what* a module installs, edit that module file directly — each
-  one is short, self-contained, and readable top to bottom.
-- To add a new module: drop a new `NN-name.sh` file in `modules/`, source
-  `lib/common.sh` at the top the same way the others do, add its filename to
-  `config/modules.conf`.
-
-## Notes / deliberate decisions baked into specific modules
-
-- **02-gpu-drivers.sh** — GPU-agnostic: reads `lspci` to detect whatever is
-  actually in the machine (NVIDIA, AMD, Intel, or a hybrid laptop with more
-  than one) and only installs the matching stack(s). No editing needed
-  per-machine.
-  - **NVIDIA**: RTX 50-series (Blackwell, e.g. the 5060 Ti) *requires* the
-    `-open` kernel-module driver variant (≥570.153.02) — the legacy
-    proprietary driver won't initialize the card — so the module resolves
-    and installs the `-open` package specifically for those. Older cards
-    just get `ubuntu-drivers autoinstall`'s normal recommendation. Hybrid
-    laptops also get `nvidia-prime` for `sudo prime-select nvidia|intel|on-demand`.
-  - **AMD**: `amdgpu` ships in-kernel already, so the module just installs
-    the Mesa/Vulkan/VA-API userspace stack plus `linux-firmware`, and
-    **LACT** (`io.github.ilya_zlobintsev.LACT`) for fan-curve/power-limit
-    control. CoreCtrl was deliberately dropped — it was never actually
-    published on Flathub (confirmed) and is now in maintenance mode with
-    no further hardware support; LACT is the actively maintained,
-    genuinely-on-Flathub alternative, and also covers NVIDIA/Intel.
-  - **Intel integrated**: Mesa/Vulkan + `intel-media-driver` for hardware
-    video decode/encode.
-  - Only the NVIDIA path needs a reboot.
-- **04-download-managers.sh** — `yt-dlp` + `xdman` + Parabolic as the
-  IDM-equivalent stack. xdman is installed from the current `.deb` release
-  asset directly (the old tar.xz+install.sh bundle this originally targeted
-  is no longer how upstream ships it). Parabolic's flatpak ID is
-  `org.nickvision.tubeconverter` — it kept its old project name
-  ("Nickvision Tube Converter") in the reverse-DNS ID after rebranding.
-- **05-media-players.sh** — PotPlayer has no Linux build; `mpv` + `SMPlayer`
-  is the closest substitute. **Caesium was dropped** — checked directly with
-  upstream and confirmed there is no official Flathub package and no Linux
-  AppImage in their GitHub releases (there's an open issue asking for one).
-  **Curtail** (`com.github.huluti.Curtail`) is installed instead — a real,
-  Flathub-published PNG/JPEG/WebP/SVG compressor covering the same job.
-- **07-dev-tools.sh** — Cloudflare WARP codename detection no longer trusts
-  `lsb_release -cs` blindly (Ubuntu derivatives like Mint/Pop!_OS/Zorin
-  often report their own codename, which doesn't exist on Cloudflare's
-  server and silently produces a repo with no Release file). It now prefers
-  `UBUNTU_CODENAME` from `/etc/os-release`, verifies the repo actually
-  resolves before adding it, and falls back through a short list of known
-  codenames if needed.
-- **10-bangla-typing.sh** — `ppa:sarim/openbangla-keyboard` doesn't actually
-  exist as a real PPA, so this now runs OpenBangla Keyboard's own official
-  install script instead (`tools/install.sh` from their GitHub repo, which
-  detects your distro itself). Falls back to `ibus-avro` if that fails.
-- **11-screenshot-tool.sh** — installs Flameshot via Flatpak specifically
-  (not apt) because the Flatpak build tracks Wayland-portal fixes faster.
-  Also unbinds GNOME's default PrtScn shortcut so Flameshot's own binding
-  actually fires, and documents the "Ubuntu on Xorg" login fallback if
-  capture still misbehaves on your session.
-- **12-monitor-brightness.sh** — `ddcutil` is the Monitorian equivalent for
-  external monitors over DDC/CI; needs `i2c-dev` + group membership, both
-  handled here, but requires a re-login to take effect.
-- **06-remote-access.sh** — also installs **Remmina** (+ RDP plugin)
-  alongside TeamViewer: TeamViewer is for controlling *this* desktop
-  remotely, Remmina is for connecting *out* to other machines.
-- **08-office-suite.sh** — also installs **Thunderbird** via Flatpak rather
-  than `apt install thunderbird`, since on recent Ubuntu that apt package is
-  a thin transitional wrapper around the Snap build; Flatpak keeps this
-  toolkit snap-free and consistent with how the other desktop apps here are
-  installed.
-- **13-gnome-extensions.sh** — installs Dash to Panel, Caffeine, Blur My
-  Shell, GSConnect, AppIndicator Support, Clipboard Indicator, Just
-  Perfection, ArcMenu, Monitor Brightness & Volume (ddcutil), Show Desktop
-  Applet, Spotify Controls + Track Info, and System Monitor via `gext`
-  (gnome-extensions-cli). Two bugs fixed here: (1) `pipx install` puts
-  `gext` in `~/.local/bin`, which often isn't on `PATH` within the same
-  script run — the module now exports that path explicitly right after
-  installing it, instead of the install silently succeeding and then the
-  very next check reporting "gext unavailable". (2) `gext`'s default DBus
-  backend pops up an interactive GNOME confirmation dialog per extension
-  (the same one you'd see installing from a browser) — that would silently
-  block a scripted run, so the module now uses `gext --filesystem`, which
-  installs directly without that dialog. A logout/login afterward lets
-  GNOME Shell fully pick the new extensions up. This module intentionally
-  stops at *installing* them — per-extension configuration is meant to
-  become a follow-up module once you share your settings.
-- **16-startup-apps.sh** — creates `~/.config/autostart/*.desktop` entries
-  (the same mechanism GNOME's own "Startup Applications" tool uses) for
-  ZapZap, Discord, Flameshot, NVIDIA X Server Settings, qBittorrent,
-  Remmina, and Spotify. Runs last in the module order deliberately, since
-  it checks whether each app is actually installed before creating its
-  entry. "SSH Key Agent" and "xapp-sn-watcher" need no action of their own
-  — they're provided by the system already.
-- **15-spotify-spotx.sh** — explicitly avoids the Snap Spotify package,
-  since SpotX-Bash refuses to patch it (confirmed by your own run log:
-  `Error: Snap client not supported`). Installs from Spotify's official APT
-  repo instead, then runs SpotX against that.
-
-## Fedora / KDE specifics
-
-### Apps skipped on Fedora KDE Plasma
-
-The Fedora KDE spin ships a fairly complete set of desktop apps out of the
-box, so several things this toolkit installs elsewhere would just duplicate
-existing apps or land unused. These are automatically skipped when
-`DISTRO_ID=fedora` and `DESKTOP_ENV=kde`:
-
-| Skipped on Fedora KDE | Because Plasma already ships |
-|---|---|
-| LibreOffice | LibreOffice (via the `kde-desktop-environment` group) |
-| OnlyOffice | LibreOffice covers the same ground; OnlyOffice is redundant here |
-| Thunderbird | KMail + Kontact (via `kde-pim`) |
-| Flameshot | Spectacle (already bound to PrtScn, portal-integrated) |
-| Remmina | KRDC (RDP + VNC, KDE-native) |
-| Dash to Panel, Blur My Shell, Clipboard Indicator, AppIndicator Support, Just Perfection, ArcMenu, Show Desktop Applet, System Monitor | Plasma's own panel, KWin blur, Klipper, system-tray, App menu, task manager, monitor widget — all built in |
-| Monitor Brightness & Volume (ddcutil) extension | Plasma's brightness applet uses ddcutil natively |
-| Spotify Controls + Track Info extension | Plasma's Media Player widget (also MPRIS-based) |
-| GSConnect extension | KDE Connect (built into Plasma) |
-| gnome-tweaks, gnome-extensions-app, Synaptic, File Roller | Plasma's System Settings + Discover; Ark instead of File Roller |
-
-The `13-gnome-extensions.sh` module skips entirely on KDE (GNOME Shell
-extensions don't apply there); TeamViewer is still installed since it's for
-being reached remotely from a phone, which KRDC doesn't do.
-
-### Fedora-specific plumbing
-
-- **00-system-update.sh** — on Fedora, enables **RPM Fusion** (free +
-  nonfree), swaps Fedora's limited `ffmpeg-free` for the full RPM Fusion
-  `ffmpeg`, and installs the `multimedia` codec group. This is the Fedora
-  analogue of "enable universe + add PPAs" and is a prerequisite for the
-  GPU and media modules. No-op on Debian/Ubuntu.
-- **02-gpu-drivers.sh (Fedora NVIDIA)** — installs RPM Fusion's
-  `akmod-nvidia` (which auto-rebuilds the kernel module on every kernel
-  update) plus `xorg-x11-drv-nvidia-cuda`. For an RTX 50-series (Blackwell)
-  card it first writes `%_with_kmod_nvidia_open 1` to
-  `/etc/rpm/macros.nvidia-kmod` so akmod builds the **open** module — the
-  proprietary one won't initialize a Blackwell card. akmod needs a few
-  minutes to compile before you reboot; the module tells you how to check.
-- **10-bangla-typing.sh (Fedora)** — installs OpenBangla Keyboard from the
-  maintainer's COPR (`badshah/openbangla-keyboard`), picking the **Fcitx5**
-  backend on KDE (Plasma's iBus support is poor) or the **iBus** backend on
-  GNOME.
-- **11-screenshot-tool.sh (KDE)** — installs Flameshot but does *not* rebind
-  PrtScn; KDE ships **Spectacle** already bound and portal-integrated. The
-  module tells you how to point PrtScn at Flameshot via System Settings if
-  you prefer it.
-- **12-monitor-brightness.sh (KDE)** — `ddcutil` + i2c group setup is the
-  same, but on KDE the GUI slider is Plasma's built-in brightness applet
-  (which uses ddcutil under the hood), not a GNOME extension.
-- **13-gnome-extensions.sh (KDE)** — skipped entirely. GNOME Shell
-  extensions don't exist on Plasma; the module prints the KDE-native
-  equivalents (panel, Klipper, system-tray indicators, brightness applet)
-  and exits cleanly.
-- **01-cli-essentials.sh** — GNOME Tweaks / Extension Manager and Synaptic
-  are installed only where they fit (GNOME / apt respectively); on KDE the
-  archive tool is **Ark** instead of File Roller.
-- **15-spotify-spotx.sh (Fedora)** — SpotX patches a native deb install and
-  can't auto-patch on Fedora, so the module installs the Spotify **Flatpak**
-  (un-patched) instead of failing.
-
-
-
-ESET, Revo Uninstaller, WinRAR (replaced by built-in Archive Manager +
-unrar/p7zip), Epic Games launcher, Rockstar launcher, Steam, Git, Adobe
-Acrobat.
-
-## After running
-
-1. Reboot if the NVIDIA driver module ran.
-2. Log out/in if the monitor-brightness or gnome-extensions modules ran
-   (group membership / Shell restart).
-3. Open GNOME Extension Manager to enable + configure the extensions
-   (send over your customization list and it'll become
-   `modules/16-gnome-extension-config.sh`).
-4. Sign into Brave/Chrome, TeamViewer, Discord, Spotify, WhatsApp Web as
-   usual — none of that is scriptable without your credentials.
-5. Check `logs/` for any module that failed — the terminal already showed
-   you the last 25 lines, but the full log is there for anything deeper.
+- **Something failed.** Read the hint under the ✗, fix the cause, run
+  `./install.sh` again. Finished items are skipped, so only the failed parts run.
+- **"Another package manager is running".** GNOME Software or automatic updates
+  hold the package lock. Wait for them to finish, then re-run.
+- **Extensions don't show up.** Log out and back in. Check with `gnome-extensions list --enabled`.
+- **Prompt unchanged.** Open a new terminal, or run `source ~/.bashrc`.
+- **Monitor brightness slider can't find the screen.** Log out and back in, then
+  test with `ddcutil detect`. DDC/CI must be enabled in the monitor's own menu.

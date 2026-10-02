@@ -1,0 +1,46 @@
+[/]
+application-shortcuts=[{'id': 'ArcMenu_Software', 'name': 'Software'}, {'id': 'org.gnome.Settings.desktop'}, {'id': 'org.gnome.tweaks.desktop'}, {'id': 'org.gnome.Terminal.desktop'}, {'id': 'ArcMenu_ActivitiesOverview', 'name': 'Activities Overview', 'icon': 'view-fullscreen-symbolic'}]
+apps-show-extra-details=true
+arcmenu-hotkey=['Super_L']
+arcmenu-hotkey-overlay-key-enabled=true
+hide-overview-on-arcmenu-open=false
+hide-overview-on-startup=true
+hotkey-open-primary-monitor=false
+icon-size-apps=-1
+icon-size-buttons=-1
+icon-size-categories=-1
+icon-size-misc=-1
+icon-size-shortcuts=-1
+menu-background-color='rgb(245,247,250)'
+menu-border-color='rgba(18,51,84,0.2)'
+menu-foreground-color='rgb(18,51,84)'
+menu-item-active-bg-color='rgba(18,51,84,0.15)'
+menu-item-active-fg-color='rgb(18,51,84)'
+menu-item-hover-bg-color='rgba(18,51,84,0.08)'
+menu-item-hover-fg-color='rgb(18,51,84)'
+menu-layout='11'
+menu-position-alignment=98
+menu-separator-color='rgba(18,51,84,0.15)'
+multi-monitor=false
+override-menu-theme=false
+pinned-apps=[{'id': 'io.missioncenter.MissionCenter.desktop'}, {'id': 'anydesk.desktop'}, {'id': 'com.teamviewer.TeamViewer.desktop'}, {'id': 'org.gnome.baobab.desktop'}, {'id': 'org.gnome.Calculator.desktop'}, {'id': 'com.cloudflare.WarpTaskbar.desktop'}, {'id': 'com.discordapp.Discord.desktop'}, {'id': 'google-chrome.desktop'}, {'id': 'org.qbittorrent.qBittorrent.desktop'}, {'id': 'com.spotify.Client.desktop'}, {'id': 'com.rtosta.zapzap.desktop'}, {'id': 'd837be34-bc72-4a69-b4a5-67b20095fb27', 'name': 'Office', 'isFolder': 'true'}, {'id': 'ec2b252a-16d5-40c4-8867-d81893f657ec', 'name': 'Tools', 'isFolder': 'true'}, {'id': 'screamingfrogseospider.desktop'}, {'id': 'com.brave.Browser.desktop'}, {'id': 'gnome-extensions prefs arcmenu@arcmenu.com', 'name': 'ArcMenu Settings', 'icon': 'ArcMenu_ArcMenuIcon'}, {'id': 'org.gnome.tweaks.desktop'}, {'id': 'org.gnome.Software.desktop'}]
+pop-folders-data={'Library Home': 'Library Home', 'System': 'System', 'Utilities': 'Utilities'}
+position-in-panel='Left'
+prefs-visible-page=0
+recently-installed-apps=['org.kde.kdenlive.desktop', 'de.haeckerfelix.Shortwave.desktop', 'net.code-industry.masterpdfeditor5.desktop', 'org.inkscape.Inkscape.desktop', 'chrome-aghbiahbpaijignceidepookljebhfak-Default.desktop', 'io.gitlab.ilshat_apps.manuscript.desktop', 'firefox-personal.desktop', 'firefox-private.desktop', 'dev.lizardbyte.app.Sunshine.desktop']
+search-entry-border-radius=(true, 25)
+show-activities-button=false
+show-category-sub-menus=true
+update-notifier-project-version=74
+
+[pinned-apps-folders/1e62501d-ce0b-444a-aba0-988088defa9a]
+pinned-apps=[{'id': 'libreoffice-writer.desktop'}, {'id': 'libreoffice-calc.desktop'}]
+
+[pinned-apps-folders/7f540ec6-f155-41c6-af9a-e7d61262c555]
+pinned-apps=[{'id': 'org.gnome.Extensions.desktop'}, {'id': 'org.flameshot.Flameshot.desktop'}, {'id': 'com.github.huluti.Curtail.desktop'}]
+
+[pinned-apps-folders/d837be34-bc72-4a69-b4a5-67b20095fb27]
+pinned-apps=[{'id': 'libreoffice-impress.desktop'}, {'id': 'libreoffice-calc.desktop'}, {'id': 'libreoffice-writer.desktop'}]
+
+[pinned-apps-folders/ec2b252a-16d5-40c4-8867-d81893f657ec]
+pinned-apps=[{'id': 'openbangla-keyboard.desktop'}, {'id': 'xdm-app.desktop'}, {'id': 'org.gnome.baobab.desktop'}, {'id': 'com.github.huluti.Curtail.desktop'}, {'id': 'com.rustdesk.RustDesk.desktop'}, {'id': 'org.nickvision.tubeconverter.desktop'}, {'id': 'org.flameshot.Flameshot.desktop'}, {'id': 'com.teamviewer.TeamViewer.desktop'}]
