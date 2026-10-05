@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Title:    Remote access
-# Installs: AnyDesk · Remmina (skipped on Fedora KDE, which ships KRDC)
+# Installs: AnyDesk
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 module_init
 
@@ -34,12 +34,4 @@ REPO
   fi
   pm_refresh
   pkg "AnyDesk" - anydesk
-fi
-
-# --- Remmina -----------------------------------------------------------------------
-if is_fedora_kde; then
-  skipped "Remmina" "not needed — KRDC is built in"
-else
-  pm_refresh
-  pkg "Remmina" remmina
 fi

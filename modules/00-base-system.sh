@@ -46,4 +46,4 @@ case "$PKG_FAMILY" in
     exit 1 ;;
 esac
 
-ensure_flathub && ok "Flathub ready"
+if ensure_flathub; then ok "Flathub ready"; else record FAIL step "Flathub" "${SPIN_REASON:-could not add Flathub}"; fi

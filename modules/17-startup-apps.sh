@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Title:    Startup apps
-# Installs: Launch at login: ZapZap · Discord · Flameshot · qBittorrent · Remmina · Spotify (only those installed)
+# Installs: Launch at login: ZapZap · Flameshot · qBittorrent · Spotify (only those installed)
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 module_init
 
@@ -18,6 +18,7 @@ Name=$2
 Exec=$3
 Terminal=false
 X-GNOME-Autostart-enabled=true
+X-LinuxSetup=true
 DESK
   ok "$2 will start at login"; record OK cfg "Autostart: $2"
 }
@@ -31,8 +32,19 @@ autostart_app() {   # autostart_app <file-id> <Name> <native-cmd> <flatpak-id> [
 }
 
 autostart_app zapzap      "ZapZap"       ""            com.rtosta.zapzap
-autostart_app discord     "Discord"      discord       com.discordapp.Discord  "--start-minimized"
 autostart_app flameshot   "Flameshot"    flameshot     org.flameshot.Flameshot
 autostart_app qbittorrent "qBittorrent"  qbittorrent   ""
-autostart_app remmina     "Remmina"      remmina       ""                      "-i"
 autostart_app spotify     "Spotify"      spotify       com.spotify.Client
+
+# Remove startup entries this script created in earlier versions for apps that
+# are no longer on the list. Entries made by the apps themselves are left alone
+# (they're recognised by the exact Exec line this script used to write).
+for f in discord remmina; do
+  file="$AUTOSTART/$f.desktop"
+  [ -f "$file" ] || continue
+  if grep -q '^X-LinuxSetup=true' "$file" \
+     || grep -qxE 'Exec=(discord|flatpak run com\.discordapp\.Discord) --start-minimized|Exec=remmina -i' "$file"; then
+    rm -f "$file"
+    ok "Removed old startup entry: $f"; record OK cfg "Removed startup entry: $f"
+  fi
+done

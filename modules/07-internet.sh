@@ -41,4 +41,4 @@ else
   fi
   pkg "Cloudflare WARP" - cloudflare-warp
 fi
-is_cmd warp-cli && next_step "Connect Cloudflare WARP once: warp-cli registration new && warp-cli connect"
+if is_cmd warp-cli; then next_step "Connect Cloudflare WARP once: warp-cli registration new && warp-cli connect"; fi

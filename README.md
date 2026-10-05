@@ -34,8 +34,8 @@ and keeps the session alive for the whole run.
 | `./install.sh` | Runs every module in `config/modules.conf` |
 | `./install.sh 05 15` | Runs only the listed modules (numbers or names, e.g. `./install.sh media spotify`) |
 | `./install.sh --list` | Shows what each module installs. Installs nothing |
-| `./install.sh --terminal` | Configures only the terminal prompt. No sudo, no packages, nothing else touched |
-| `./install.sh --terminal-reset` | Removes the terminal configuration again |
+| `./install.sh --terminal` | Configures only the terminal (prompt and Ctrl+Alt+T). No sudo, no packages, nothing else touched |
+| `./install.sh --terminal-reset` | Removes the terminal configuration and the shortcut again |
 | `./install.sh --help` | Shows the usage summary |
 
 ## Questions at the start
@@ -46,6 +46,8 @@ stops halfway waiting for input:
 - **Spotify account: free or premium.** SpotX applies different patches for
   each (`-p` for premium accounts).
 - **How many Firefox profiles** (press Enter for the default of 3).
+- **Dual boot: make Windows the default boot option?** `y` or `n`; pressing
+  Enter means no, so Linux stays the default.
 
 Questions only appear when the matching module is part of the run.
 
@@ -62,15 +64,16 @@ Questions only appear when the matching module is part of the run.
 | 06 | Office & writing | LibreOffice Writer/Calc/Impress, Apostrophe, Mail Viewer |
 | 07 | Internet | qBittorrent, FileZilla, Cloudflare WARP |
 | 08 | Communication | Discord, ZapZap (WhatsApp) |
-| 09 | Remote access | AnyDesk, Remmina |
+| 09 | Remote access | AnyDesk |
 | 10 | Development | Visual Studio Code |
 | 11 | Bangla typing | OpenBangla Keyboard (Avro Phonetic layout) |
 | 12 | Screenshots | Flameshot, bound to the Print Screen key |
 | 13 | Monitor brightness | ddcutil and i2c access for external monitors |
 | 14 | GNOME extensions | See below, plus your saved ArcMenu layout |
 | 15 | Spotify | Spotify with SpotX ad-blocking patches |
-| 16 | Terminal | Two-line prompt, see below |
-| 17 | Startup apps | ZapZap, Discord, Flameshot, qBittorrent, Remmina and Spotify start at login (those that are installed) |
+| 16 | Terminal | Ctrl+Alt+T opens a terminal; two-line prompt, see below |
+| 17 | Startup apps | ZapZap, Flameshot, qBittorrent and Spotify start at login (those that are installed) |
+| 18 | Boot menu | GRUB: 2-second menu, Windows detected for dual boot, Windows or Linux as the default |
 
 Apps come from the distribution's repositories, the vendor's own repository
 (Chrome, VS Code, AnyDesk, Cloudflare WARP, Spotify on Ubuntu) or Flathub.
@@ -97,6 +100,23 @@ into the repository:
 dconf dump /org/gnome/shell/extensions/arcmenu/ > config/arcmenu.dconf
 ```
 
+### Boot menu (dual boot)
+
+Module 18 edits `/etc/default/grub` and rebuilds the menu
+(`grub2-mkconfig -o /boot/grub2/grub.cfg` on Fedora, `update-grub` on Ubuntu):
+
+- `GRUB_TIMEOUT=2`, and the menu is shown on every boot
+- `GRUB_DISABLE_OS_PROBER=false`, so GRUB detects Windows
+- If you answered **y**: `GRUB_DEFAULT` is set to the Windows entry's exact
+  title as GRUB lists it, for example `"Windows Boot Manager (on /dev/nvme0n1p1)"`.
+  The title is read from the generated menu, so it is right on any machine.
+- If you answered **n** (or pressed Enter): Linux stays the default, and a
+  Windows default from an earlier run is undone.
+
+The original file is backed up once to `/etc/default/grub.linux-setup.bak`.
+Systems without GRUB skip this module. To change the default later, run
+`./install.sh boot` and answer the question again.
+
 ### Terminal prompt
 
 ```
@@ -116,6 +136,9 @@ $
 - Larger, de-duplicated, timestamped history shared between open terminals
 - Aliases: `ll`, `la`, `..`, `...`, plus `mkcd <dir>` (create and enter)
 
+**Ctrl+Alt+T** opens a terminal (Ptyxis on Fedora, GNOME Terminal or Console
+elsewhere). Ubuntu and KDE Plasma already have this shortcut, so it is left as it is there.
+
 The settings live in `config/terminal.bash`, are copied to
 `~/.config/linux-setup/terminal.bash` and loaded by a three-line block in
 `~/.bashrc` (a backup is saved as `~/.bashrc.linux-setup.bak`). Edit
@@ -128,8 +151,8 @@ The settings live in `config/terminal.bash`, are copied to
 - **Spotify** is the Flathub build on Fedora; SpotX is pointed at its install
   folder. A Flatpak update replaces the patched files, so run
   `./install.sh 15` again after Spotify updates.
-- **Fedora KDE Plasma** skips Flameshot (Spectacle is built in), Remmina (KRDC is
-  built in) and the GNOME extensions; LibreOffice is already present and is
+- **Fedora KDE Plasma** skips Flameshot (Spectacle is built in) and the GNOME
+  extensions, and leaves Ctrl+Alt+T to Konsole; LibreOffice is already present and is
   detected as such. OpenBangla Keyboard uses the Fcitx5 backend on KDE and iBus
   on GNOME.
 - **Ubuntu** replaces the Snap build of Spotify with the apt one, because SpotX
@@ -140,7 +163,7 @@ The settings live in `config/terminal.bash`, are copied to
 Each item shows a spinner with elapsed time while it runs, then a single line:
 
 ```
-[ 5/18] Media
+[ 5/19] Media
   ✓ VLC — already installed
   ✓ HandBrake — installed (34s)
   ✗ SMPlayer — failed to install

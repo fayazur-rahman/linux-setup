@@ -441,3 +441,48 @@ print_summary() {
   fi
   term ""
 }
+
+# ---------- GNOME custom keyboard shortcuts ----------------------------------------------
+_MK="org.gnome.settings-daemon.plugins.media-keys"
+_kb_path() { printf '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom-%s/' "$1"; }
+
+# _kb_list add|remove <path>   — edit the list of custom shortcut paths
+_kb_list() {
+  local cur new
+  cur="$(gsettings get "$_MK" custom-keybindings 2>/dev/null || echo '[]')"
+  new="$(python3 - "$cur" "$1" "$2" << 'PY'
+import ast, sys
+cur, action, path = sys.argv[1].replace("@as ", ""), sys.argv[2], sys.argv[3]
+try: items = list(ast.literal_eval(cur))
+except Exception: items = []
+if action == "add" and path not in items: items.append(path)
+if action == "remove": items = [i for i in items if i != path]
+print(str(items))
+PY
+)"
+  [ "$new" != "$cur" ] && gsettings set "$_MK" custom-keybindings "$new"
+}
+
+_gs_str() { gsettings get "$1" "$2" 2>/dev/null | sed "s/^'//; s/'\$//"; }
+
+# gnome_shortcut <id> <Name> <command> <binding>
+#   returns 0 when it was created/updated, 2 when it was already exactly like this
+gnome_shortcut() {
+  local path schema
+  path="$(_kb_path "$1")"; schema="$_MK.custom-keybinding:$path"
+  if [ "$(_gs_str "$schema" binding)" = "$4" ] && [ "$(_gs_str "$schema" command)" = "$3" ] \
+     && gsettings get "$_MK" custom-keybindings 2>/dev/null | grep -qF "$path"; then
+    return 2
+  fi
+  _kb_list add "$path"
+  gsettings set "$schema" name "$2"
+  gsettings set "$schema" command "$3"
+  gsettings set "$schema" binding "$4"
+}
+
+gnome_shortcut_remove() {
+  local path; path="$(_kb_path "$1")"
+  gsettings get "$_MK" custom-keybindings 2>/dev/null | grep -qF "$path" || return 1
+  _kb_list remove "$path"
+  gsettings reset-recursively "$_MK.custom-keybinding:$path" 2>/dev/null || true
+}

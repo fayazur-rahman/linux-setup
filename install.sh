@@ -31,7 +31,7 @@ usage() {
     ./install.sh                   Run every module
     ./install.sh 05 15             Run selected modules (by number or name, e.g. "media")
     ./install.sh --list            Show what each module installs, without installing
-    ./install.sh --terminal        Configure only the terminal prompt — nothing else is touched
+    ./install.sh --terminal        Configure only the terminal (prompt + Ctrl+Alt+T) — nothing else is touched
     ./install.sh --terminal-reset  Remove the terminal configuration
     ./install.sh --help            Show this help
 
@@ -155,6 +155,14 @@ trap 'term ""; term "  ${C_YELLOW}Interrupted.${C_RESET} Re-run any time — fin
 # --- questions, all asked up front so the run never stops halfway --------------------------
 ask() { printf '  %s?%s %s' "$C_CYAN" "$C_RESET" "$1" >&3; }
 : > "$PREFS_FILE"; chmod 600 "$PREFS_FILE"
+
+if selected boot-menu && [ -f /etc/default/grub ]; then
+  term ""
+  ask "Dual boot: make Windows the default boot option? [y/N] "
+  read -r ans
+  case "${ans,,}" in y|yes) GRUB_WINDOWS_DEFAULT=y ;; *) GRUB_WINDOWS_DEFAULT=n ;; esac
+  echo "GRUB_WINDOWS_DEFAULT=$GRUB_WINDOWS_DEFAULT" >> "$PREFS_FILE"
+fi
 
 if selected spotify; then
   term ""
